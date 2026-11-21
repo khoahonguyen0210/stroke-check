@@ -1,3 +1,4 @@
+import argparse
 import json
 from tempfile import NamedTemporaryFile
 from pathlib import Path
@@ -23,7 +24,13 @@ def classifier():
 
 
 def main():
-    sessions = storage.load_sessions()
+    parser = argparse.ArgumentParser(description="Train and evaluate fusion on labeled takes.")
+    parser.add_argument("--exclude-person", action="append", default=[], help="Skip this person's recordings. Repeat to skip multiple people.")
+    parser.add_argument("--output", type=Path, default=fusion.MODEL, help="Save the trained model to this path.")
+    args = parser.parse_args()
+
+    excluded = {storage.user_key(person) for person in args.exclude_person}
+    sessions = [session for session in storage.load_sessions() if session["person"] not in excluded]
     if len({session["person"] for session in sessions}) < 2:
         raise SystemExit("Record labeled takes from at least two people before training.")
 
@@ -55,11 +62,11 @@ def main():
         print(f"{label} accuracy={accuracy_score(actual, predicted):.3f} F1={f1_score(actual, predicted, zero_division=0):.3f} n={len(actual)}")
         models[sign] = classifier().fit(rows, targets)
 
-    with NamedTemporaryFile(dir=fusion.MODEL.parent, delete=False) as file:
+    with NamedTemporaryFile(dir=args.output.parent, delete=False) as file:
         path = Path(file.name)
     try:
         joblib.dump(models, path)
-        path.replace(fusion.MODEL)
+        path.replace(args.output)
     finally:
         path.unlink(missing_ok=True)
 
