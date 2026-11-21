@@ -30,6 +30,8 @@ def now():
 
 
 def _say(state, text, kind):
+    if re.search(r"<\||\w+\s*\{", text or ""):
+        return {"ok": False, "error": "text must be plain words for the family, not a tool call."}
     check = safety.check(text)
     if check["ok"]:
         state["said"].append(text)

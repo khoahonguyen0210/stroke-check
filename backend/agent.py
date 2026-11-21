@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import time
 from pathlib import Path
 
@@ -85,11 +86,25 @@ def context(state):
 
 
 def messages_for(state):
-    msgs = [{"role": "system", "content": SYSTEM.replace("{language}", LANGUAGES[state["language"]])}]
-    for turn in state["conversation"][-12:]:
-        msgs.append({"role": "user" if turn["role"] == "family" else "assistant", "content": turn["text"]})
-    msgs.append({"role": "user", "content": context(state)})
-    return msgs
+    lines = [f"{'Family' if t['role'] == 'family' else 'You'}: {t['text']}" for t in state["conversation"][-12:]]
+    transcript = "\n".join(lines) if lines else "(no messages yet: this is your first turn)"
+    user = f"CONVERSATION SO FAR\n{transcript}\n\n{context(state)}\n\nTake your next turn now using tool calls."
+    return [{"role": "system", "content": SYSTEM.replace("{language}", LANGUAGES[state["language"]])},
+            {"role": "user", "content": user}]
+
+
+def text_tool_calls(content):
+    calls = []
+    pattern = r"\b(\w+)\s*(\{.*?\}|\(\))(?=\s*(?:\w+\s*[{(]|$))"
+    for name, body in re.findall(pattern, content.replace("<|\"|>", '"'), re.S):
+        if name not in agent_tools.RUN:
+            continue
+        body = "{}" if body == "()" else re.sub(r'([{,])\s*(\w+)\s*:', r'\1"\2":', body)
+        try:
+            calls.append((name, json.loads(body)))
+        except ValueError:
+            continue
+    return calls
 
 
 def client_for(name):
@@ -105,7 +120,7 @@ def call_model(client, model, msgs, reasoning, name):
     if name in ("bolt", "super"):
         extra = {"chat_template_kwargs": {"enable_thinking": bool(reasoning)}}
     return client.chat.completions.create(
-        model=model, messages=msgs, tools=agent_tools.TOOLS, tool_choice="auto",
+        model=model, messages=msgs, tools=agent_tools.TOOLS, tool_choice="required",
         temperature=0.2, max_tokens=1024 if reasoning else 400, extra_body=extra or None,
     )
 
@@ -132,9 +147,17 @@ def run_turn(state, model_name="bolt", reasoning=False):
             m = r.choices[0].message
             calls = m.tool_calls or []
             if not calls:
-                if m.content and m.content.strip():
-                    res = agent_tools.speak(state, m.content.strip())
-                    actions.append({"tool": "speak", "args": {"text": m.content.strip()}, "result": res, "t": agent_tools.now(), "latency_ms": latency, "note": "plain text reply"})
+                content = (m.content or "").strip()
+                parsed = text_tool_calls(content)
+                for name, args in parsed:
+                    try:
+                        res = agent_tools.RUN[name](state, **args)
+                    except TypeError as error:
+                        res = {"ok": False, "error": f"Bad arguments: {error}"}
+                    actions.append({"tool": name, "args": args, "result": res, "t": agent_tools.now(), "latency_ms": latency, "note": "parsed from text"})
+                if not parsed and content and not re.search(r"[{}<>|]", content):
+                    res = agent_tools.speak(state, content)
+                    actions.append({"tool": "speak", "args": {"text": content}, "result": res, "t": agent_tools.now(), "latency_ms": latency, "note": "plain text reply"})
                 break
             msgs.append({"role": "assistant", "content": m.content or "", "tool_calls": [
                 {"id": c.id, "type": "function", "function": {"name": c.function.name, "arguments": c.function.arguments}} for c in calls]})
