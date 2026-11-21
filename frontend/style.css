@@ -1,5 +1,55 @@
-body { margin: 0; font: 1rem system-ui, sans-serif; }
-main { max-width: 64rem; margin: auto; padding: 1rem; }
+:root {
+  color: #eaf1ff;
+  background: #10152b;
+  color-scheme: dark;
+  font: 1rem/1.5 system-ui, sans-serif;
+  --panel: #1b2540;
+  --border: #7082a7;
+  --signal: #91f7e9;
+  --warning: #ffb5aa;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; }
+main { max-width: 65rem; margin: auto; padding: clamp(1rem, 4vw, 3rem); }
+h1, h2, h3 { font-family: "Pixelify Sans", system-ui, sans-serif; line-height: 1.1; }
+h1 { color: var(--signal); font-size: clamp(2.75rem, 7vw, 4.5rem); margin: 0; }
+h2 { font-size: clamp(1.7rem, 4vw, 2.5rem); margin-top: 0; }
+h3 { font-size: 1.35rem; }
+a { color: var(--signal); }
+section, #setup, details {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  padding: 1rem;
+  margin: 1rem 0;
+}
+form { display: flex; align-items: center; gap: .75rem 1rem; flex-wrap: wrap; }
+label { display: inline-flex; align-items: center; gap: .4rem; }
+fieldset { display: flex; flex-wrap: wrap; gap: .75rem; min-width: 0; width: 100%; border: 1px solid var(--border); }
+input, select, button {
+  font: inherit;
+  color: inherit;
+  border: 1px solid var(--border);
+  border-radius: .2rem;
+}
+input:not([type="checkbox"]), select { padding: .45rem; background: #10152b; min-width: 0; max-width: 100%; }
+input[type="checkbox"] { accent-color: var(--signal); }
+button { padding: .5rem .9rem; background: #263659; cursor: pointer; font-weight: 700; }
+button:disabled { cursor: default; opacity: .6; }
+#start, #retake { background: var(--signal); color: #10152b; }
+#cancel-alert { background: var(--warning); color: #271014; font-size: 1.15rem; }
+:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+summary { cursor: pointer; font-weight: 700; }
 #preview { position: relative; max-width: 40rem; }
-video { display: block; width: 100%; }
-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+video { display: block; width: 100%; max-height: 48vh; object-fit: contain; }
+canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+#signs { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); }
+#signs article { border: 1px solid var(--border); background: #10152b; padding: .75rem; }
+#signs h3, #signs p { margin: .2rem 0; }
+.flagged, #outcome:has(~ #emergency:not([hidden])) { color: var(--warning); }
+#signs .flagged, #emergency { border-color: var(--warning); }
+#emergency { border-width: 2px; }
+#contacts-status, #alert-status { white-space: pre-line; }
+pre { margin-bottom: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+dt { font-weight: 700; text-transform: capitalize; }
+dd { margin: 0 0 .5rem; overflow-wrap: anywhere; }

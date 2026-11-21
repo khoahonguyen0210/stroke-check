@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Stroke Check</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@600;700&display=swap">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -55,6 +56,7 @@
     </details>
     <section id="result" hidden>
       <h2 id="outcome" role="alert"></h2>
+      <p>This is a warning tool, not a diagnosis. If you suspect a stroke, call 911 now.</p>
       <p id="retake-reason"></p>
       <div id="signs"></div>
       <details id="under-hood">
@@ -80,7 +82,7 @@
         <h3>Agent actions</h3>
         <ol id="agent-actions"></ol>
         <h3>Trusted contact alerts</h3>
-        <p id="alert-status" role="status"></p>
+        <p id="alert-status" role="status" tabindex="-1"></p>
         <button id="cancel-alert" type="button">Cancel — false alarm</button>
       </section>
       <button id="retake" type="button" hidden>Retake</button>
