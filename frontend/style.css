@@ -218,3 +218,7 @@ dd { margin: 0; overflow-wrap: anywhere; }
   .mic-dot { animation: none; }
   .viz-gauge-fill, .viz-arm-fill { transition: none; }
 }
+
+#vision-review { margin-block: 1rem; padding: .85rem; border: 1px solid var(--border); border-radius: .8rem; background: var(--panel); }
+#vision-review p { margin: .35rem 0; font-size: .9rem; color: var(--muted); }
+#vision-review-status:empty { display: none; }

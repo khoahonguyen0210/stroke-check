@@ -4,6 +4,7 @@ import re
 from copy import deepcopy
 from pathlib import Path
 from threading import Lock
+from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response
@@ -65,6 +66,22 @@ def explain_result(payload: dict):
     if not isinstance(result, dict) or not isinstance(result.get("features"), dict):
         raise HTTPException(422, "Check result is required.")
     return explain.write(result, result["features"])
+
+
+class VisionReviewRequest(BaseModel):
+    frames: list[Annotated[str, Field(max_length=128_050)]] = Field(min_length=3, max_length=3)
+
+
+@app.post("/api/vision-review")
+def review_face(payload: VisionReviewRequest):
+    from backend import vision_review
+
+    if not all(vision_review.valid_frame(frame) for frame in payload.frames):
+        raise HTTPException(422, "Three valid JPEG face frames are required.")
+    try:
+        return vision_review.review(payload.frames)
+    except Exception:
+        raise HTTPException(503, "Nemotron Vision is unavailable. The camera result is still available.") from None
 
 
 @app.post("/api/collect")

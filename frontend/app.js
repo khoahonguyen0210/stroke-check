@@ -112,7 +112,7 @@ function capture(duration, message, read) {
         $("#capture-progress").value = elapsed
         if (read && lastVideoTime !== video.currentTime) {
           lastVideoTime = video.currentTime
-          frames.push({ t: Math.max(0, elapsed / 1000), ...read(now) })
+          frames.push({ t: Math.max(0, elapsed / 1000), ...read(now, elapsed) })
         }
         requestAnimationFrame(frame)
       } catch (error) {
@@ -124,8 +124,44 @@ function capture(duration, message, read) {
 }
 
 
+function createFaceSnapshots() {
+  const frames = [null, null, null]
+  const targets = [
+    ["relax", 1000],
+    ["smile", 1000],
+    ["smile", 2200],
+  ]
+  const photo = document.createElement("canvas")
+  photo.width = 384
+  photo.height = 384
+  const photoContext = photo.getContext("2d")
+  let crop
+
+  function sample(phase, elapsed, points) {
+    const index = targets.findIndex(([targetPhase, at], i) => targetPhase === phase && elapsed >= at && !frames[i])
+    if (index < 0 || points.length < 468 || !photoContext) return
+    if (!crop) {
+      const width = video.videoWidth
+      const height = video.videoHeight
+      const x = points.map((point) => point.x * width)
+      const y = points.map((point) => point.y * height)
+      const bounds = [Math.min(...x), Math.min(...y), Math.max(...x), Math.max(...y)]
+      const size = Math.min(width, height, Math.max(bounds[2] - bounds[0], bounds[3] - bounds[1]) * 1.4)
+      if (size < 32 || !Number.isFinite(size)) return
+      const left = Math.min(width - size, Math.max(0, (bounds[0] + bounds[2] - size) / 2))
+      const top = Math.min(height - size, Math.max(0, (bounds[1] + bounds[3] - size) / 2))
+      crop = [left, top, size, size]
+    }
+    photoContext.drawImage(video, ...crop, 0, 0, photo.width, photo.height)
+    frames[index] = photo.toDataURL("image/jpeg", .75)
+  }
+
+  return { frames, sample }
+}
+
 async function postRecording(stream, tasks) {
   const face = []
+  const snapshots = createFaceSnapshots()
   $("#capture-step").textContent = "Step 1 of 2 · Face"
   $("#capture-hint").textContent = "Face the camera. You’ll relax your face, smile, then raise your eyebrows."
   await capture(INSTRUCTION_TIME_MS, "Get ready for the face check")
@@ -133,9 +169,10 @@ async function postRecording(stream, tasks) {
   const phases = [["relax", "Relax your face"], ["smile", "Smile big"], ["brows", "Raise your eyebrows"]]
   resetFace()
   for (const [index, [phase, message]] of phases.entries()) {
-    face.push(...await capture(3000, message, (now) => {
+    face.push(...await capture(3000, message, (now, elapsed) => {
       const points = tasks.face.detectForVideo(video, now).faceLandmarks[0] ?? []
       drawLiveFace(canvas, context, video, points, phase)
+      snapshots.sample(phase, elapsed, points)
       return { phase, landmarks: points.map(xyz) }
     }).then((frames) => frames.map((frame) => ({ ...frame, t: frame.t + index * 3 }))))
   }
@@ -169,18 +206,24 @@ async function postRecording(stream, tasks) {
     throw new Error(typeof result?.detail === "string" ? result.detail : `The recording could not be submitted (HTTP ${response.status}).`)
   }
   status.textContent = ""
-  renderResult(result)
+  renderResult(result, snapshots.frames)
 }
 
 let explainRun = 0
 let stopFace3d
 let visualResult
+let visionFrames = []
 let visualRun = 0
 
 function hideVisuals() {
   explainRun += 1
   visualRun += 1
   visualResult = undefined
+  visionFrames = []
+  $("#vision-review").hidden = true
+  $("#vision-run").disabled = false
+  $("#vision-run").hidden = true
+  $("#vision-review-status").textContent = ""
   $("#under-hood").open = false
   stopFace3d?.()
   for (const id of ["#viz-result", "#face3d-box", "#arms-chart-box", "#explain-card"]) $(id).hidden = true
@@ -202,10 +245,55 @@ async function explainResult(result) {
   }
 }
 
-function showVisuals(result) {
+function showVisuals(result, frames) {
   hideVisuals()
   visualResult = result
+  visionFrames = frames.filter((frame) => frame?.startsWith("data:image/jpeg;base64,"))
+  const face = result.signs.face
+  $("#vision-review").hidden = false
+  const finding = {
+    possible_sign: "Uneven smile lift flagged",
+    not_observed: "Smile lift below the warning threshold",
+    unavailable: "Camera view insufficient",
+  }[face?.status] ?? "Unavailable"
+  const movement = face?.measurement
+  $("#vision-local").textContent = Number.isFinite(movement)
+    ? `${finding} · ${Math.round(movement * 100)}% difference in lift`
+    : finding
+  $("#vision-run").hidden = visionFrames.length !== 3
+  if (visionFrames.length !== 3) $("#vision-review-status").textContent = "This check didn’t capture three usable face frames."
   explainResult(result)
+}
+
+$("#vision-run").onclick = async (event) => {
+  if (visionFrames.length !== 3 || !visualResult) return
+  const run = explainRun
+  const button = event.currentTarget
+  const status = $("#vision-review-status")
+  const local = visualResult.signs.face
+  button.disabled = true
+  status.textContent = "Nemotron is comparing the face frames…"
+  try {
+    const review = await api("/api/vision-review", { frames: visionFrames })
+    if (run !== explainRun) return
+    const side = { image_left: "left side of the image", image_right: "right side of the image" }[review.weaker_side]
+    const observation = {
+      asymmetry_seen: side ? `Uneven smile lift seen, less lift on the ${side}.` : "Uneven smile lift seen.",
+      not_seen: "Uneven smile lift wasn’t seen in these frames.",
+      inconclusive: "These frames didn’t give a clear answer.",
+    }[review.observation]
+    const comparable = local && local.status !== "unavailable" && review.observation !== "inconclusive"
+    const comparison = comparable
+      ? (local.flag === (review.observation === "asymmetry_seen") ? "The checks agree." : "The checks differ.")
+      : "The checks could not be compared."
+    status.textContent = `${observation} ${comparison} Review time: ${(review.latency_ms / 1000).toFixed(1)} s.`
+    visionFrames = []
+    button.hidden = true
+  } catch (error) {
+    if (run === explainRun) status.textContent = error.message
+  } finally {
+    if (run === explainRun) button.disabled = false
+  }
 }
 
 $("#under-hood").ontoggle = async (event) => {
@@ -236,7 +324,7 @@ $("#under-hood").ontoggle = async (event) => {
   }
 }
 
-function renderResult(result) {
+function renderResult(result, frames = []) {
   const panel = $("#result")
   panel.hidden = false
   panel.dataset.outcome = result.overall
@@ -266,7 +354,7 @@ function renderResult(result) {
   }))
   $("#outcome").focus()
   if (result.overall === "warning") startEmergency(result)
-  showVisuals(result)
+  showVisuals(result, frames)
 }
 
 $("#setup").onsubmit = async (event) => {
@@ -315,6 +403,7 @@ $("#back-to-start").onclick = () => {
     return
   }
   resetEmergency()
+  hideVisuals()
   $("#result").hidden = true
   $(".setup-layout").hidden = false
   $("#start").focus()

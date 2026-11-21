@@ -137,6 +137,13 @@
             <figcaption><span class="legend-left">Left wrist</span> <span class="legend-right">Right wrist</span> · drop from the starting height during the 10 s hold, in shoulder-widths</figcaption>
           </figure>
         </div>
+        <div id="vision-review" hidden>
+          <h3>Nemotron Vision second opinion</h3>
+          <p><strong>Camera measurements:</strong> <span id="vision-local"></span></p>
+          <p>This experimental review sends three cropped face images from this check to NVIDIA. The camera check decides when to show a warning or send an alert.</p>
+          <button id="vision-run" type="button" hidden>Send frames to Nemotron</button>
+          <p id="vision-review-status" role="status"></p>
+        </div>
         <h3>Tracked movement</h3>
         <pre id="features"></pre>
         <h3>Processing time (ms)</h3>
