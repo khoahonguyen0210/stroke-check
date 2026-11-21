@@ -193,3 +193,64 @@ $("#setup").onsubmit = async (event) => {
 }
 
 $("#retake").onclick = () => $("#setup").requestSubmit()
+
+async function api(path, payload) {
+  const options = payload === undefined ? {} : {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+  }
+  const response = await fetch(path, options)
+  const result = await response.json()
+  if (!response.ok) throw new Error(typeof result.detail === "string" ? result.detail : "Request failed.")
+  return result
+}
+
+let contactsUser
+
+function showContacts(contacts) {
+  $("#contact-list").replaceChildren(...contacts.map((contact) => {
+    const item = document.createElement("li")
+    item.textContent = `${contact.name} (${contact.relationship}) · ${contact.email}`
+    return item
+  }))
+}
+
+function deliverySummary(sent) {
+  return sent.length ? sent.map((item) => `${item.name} · ${item.channel} · ${item.ok ? "sent" : item.error}`).join("\n") : "No consenting contacts are saved."
+}
+
+$("#contacts-open").onclick = async () => {
+  if (!$("#name").reportValidity()) return
+  contactsUser = encodeURIComponent($("#name").value.trim())
+  $("#contacts").hidden = false
+  $("#contacts-status").textContent = ""
+  try {
+    showContacts(await api(`/api/contacts/${contactsUser}`))
+  } catch (error) {
+    $("#contacts-status").textContent = error.message
+  }
+}
+$("#contacts-close").onclick = () => { $("#contacts").hidden = true }
+$("#contact-form").onsubmit = async (event) => {
+  event.preventDefault()
+  const payload = Object.fromEntries(new FormData(event.target))
+  payload.consent = payload.consent === "on"
+  try {
+    showContacts(await api(`/api/contacts/${contactsUser}`, payload))
+    event.target.reset()
+    $("#contacts-status").textContent = "Contact saved."
+  } catch (error) {
+    $("#contacts-status").textContent = error.message
+  }
+}
+$("#contacts-test").onclick = async (event) => {
+  event.target.disabled = true
+  try {
+    $("#contacts-status").textContent = "Sending test alert…"
+    const { sent } = await api(`/api/alert/test/${contactsUser}`, {})
+    $("#contacts-status").textContent = deliverySummary(sent)
+  } catch (error) {
+    $("#contacts-status").textContent = error.message
+  } finally {
+    event.target.disabled = false
+  }
+}

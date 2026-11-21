@@ -2,6 +2,7 @@ import json
 import re
 from datetime import datetime
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from uuid import uuid4
 
 DATA = Path(__file__).resolve().parents[1] / "data"
@@ -45,8 +46,18 @@ def load_sessions():
 
 
 def contacts(user):
-    return []
+    path = DATA / "contacts" / f"{user_key(user)}.json"
+    return json.loads(path.read_text()) if path.is_file() else []
 
 
 def save_contacts(user, contacts):
+    path = DATA / "contacts" / f"{user_key(user)}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with NamedTemporaryFile(dir=path.parent, mode="w", delete=False, encoding="utf-8") as file:
+        temporary = Path(file.name)
+        json.dump(contacts, file)
+    try:
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
     return contacts

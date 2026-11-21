@@ -29,7 +29,23 @@
         <label><input id="glasses" type="checkbox"> Glasses</label>
       </fieldset>
       <button id="start">Start check</button>
+      <button id="contacts-open" type="button">Trusted contacts</button>
     </form>
+    <section id="contacts" hidden>
+      <h2>Trusted contacts</h2>
+      <ul id="contact-list"></ul>
+      <form id="contact-form">
+        <label>Name <input name="name" required maxlength="80"></label>
+        <label>Relationship <input name="relationship" required maxlength="80"></label>
+        <label>Email <input name="email" type="email" required maxlength="254"></label>
+        <label>Phone (optional) <input name="phone" type="tel" maxlength="40"></label>
+        <label><input name="consent" type="checkbox" required> This contact agreed to receive alerts</label>
+        <button>Save contact</button>
+      </form>
+      <button id="contacts-test" type="button">Send test alert</button>
+      <button id="contacts-close" type="button">Close</button>
+      <p id="contacts-status" role="status"></p>
+    </section>
     <h2 id="prompt"></h2>
     <button id="done" hidden>Done</button>
     <section id="result" hidden>

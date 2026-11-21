@@ -1,11 +1,13 @@
 import json
 from pathlib import Path
+from threading import Lock
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
-from backend import fusion, recording, storage
+from backend import alerts, fusion, recording, storage
+from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parents[1]
 app = FastAPI()
@@ -58,20 +60,60 @@ def handoff(session: str):
     return PlainTextResponse("No handoff available.")
 
 
+CONTACT_LOCK = Lock()
+
+
+class Contact(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    relationship: str = Field(min_length=1, max_length=80)
+    email: str = Field(max_length=254, pattern=r"^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$")
+    phone: str | None = Field(default=None, max_length=40)
+    consent: bool = False
+
+
+class AlertRequest(BaseModel):
+    user: str
+    result: dict
+    detected_at: str
+    location: dict | None = None
+
+
+def validate_user(user):
+    try:
+        storage.user_key(user)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+
+
 @app.get("/api/contacts/{user}")
 def get_contacts(user: str):
-    return []
+    validate_user(user)
+    return storage.contacts(user)
 
 
 @app.post("/api/contacts/{user}")
-def post_contacts(user: str, payload: dict):
-    return []
+def post_contacts(user: str, payload: Contact):
+    validate_user(user)
+    if not payload.consent:
+        raise HTTPException(422, "Contact consent is required.")
+    with CONTACT_LOCK:
+        contacts = storage.contacts(user)
+        contacts = [item for item in contacts if item["email"].casefold() != payload.email.casefold()]
+        if len(contacts) >= 3:
+            raise HTTPException(409, "You can save up to three contacts.")
+        return storage.save_contacts(user, contacts + [payload.model_dump()])
 
 
 @app.post("/api/alert")
+def send_alert(payload: AlertRequest):
+    validate_user(payload.user)
+    return {"sent": alerts.send(payload.user, payload.result, payload.detected_at, payload.location)}
+
+
 @app.post("/api/alert/test/{user}")
-def alert_stub(user: str = "", payload: dict | None = None):
-    return {"sent": []}
+def test_alert(user: str):
+    validate_user(user)
+    return {"sent": alerts.test(user)}
 
 
 app.mount("/", StaticFiles(directory=ROOT / "frontend", html=True))
