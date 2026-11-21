@@ -165,7 +165,8 @@ function renderResult(result) {
     const title = document.createElement("h3")
     title.textContent = { face: "Face droop", arms: "Arm drift", speech: "Slurred speech" }[name]
     const detail = document.createElement("p")
-    detail.textContent = sign.p == null ? "Unavailable" : `${sign.flag ? "Flagged" : "Below threshold"} · ${Math.round(sign.p * 100)}%`
+    const assessment = sign.uncertain ? "Uncertain" : sign.flag ? "Flagged" : "Below threshold"
+    detail.textContent = sign.p == null ? "Unavailable" : `${assessment} · ${Math.round(sign.p * 100)}%`
     card.append(title, detail)
     return card
   }))

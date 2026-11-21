@@ -24,10 +24,11 @@ def load_models(modified_at):
 
 
 def predict(features, quality):
+    speech_score = features.get("speech", {}).get("p_slurred")
     scores = {
         "face": min(1.0, features.get("face", {}).get("smile_asymmetry", 0) * 1.2),
         "arms": min(1.0, abs(features.get("arms", {}).get("drop_difference", 0)) * 1.5),
-        "speech": features.get("speech", {}).get("p_slurred"),
+        "speech": speech_score,
     }
     if MODEL.is_file():
         values = model_input(features, quality)
@@ -38,6 +39,16 @@ def predict(features, quality):
         valid = quality.get(name, {}).get("ok") and isinstance(score, (int, float)) and isfinite(score)
         signs[name] = {"flag": bool(valid and score >= 0.6), "p": score if valid else None}
     reason = next((item.get("reason") for item in quality.values() if not item.get("ok")), None)
+    speech = signs["speech"]
+    if (
+        speech["p"] is not None
+        and isinstance(speech_score, (int, float))
+        and isfinite(speech_score)
+        and speech["flag"] != (speech_score >= 0.6)
+    ):
+        speech.update(flag=False, uncertain=True)
+        disagreement = "Speech scores disagree. Repeat the sentence close to the microphone."
+        reason = f"{reason} {disagreement}" if reason else disagreement
     if not reason and any(item["p"] is None for item in signs.values()):
         reason = "One or more checks could not be completed."
     if not reason and any(item["p"] is not None and 0.4 <= item["p"] < 0.6 for item in signs.values()):
