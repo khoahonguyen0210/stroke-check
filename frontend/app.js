@@ -119,9 +119,14 @@ async function postRecording(stream, tasks, collecting) {
 
 let explainRun = 0
 let stopFace3d
+let visualResult
+let visualRun = 0
 
 function hideVisuals() {
   explainRun += 1
+  visualRun += 1
+  visualResult = undefined
+  $("#under-hood").open = false
   stopFace3d?.()
   for (const id of ["#viz-result", "#face3d-box", "#arms-chart-box", "#explain-card"]) $(id).hidden = true
 }
@@ -142,14 +147,24 @@ async function explainResult(result) {
   }
 }
 
-async function showVisuals(result) {
+function showVisuals(result) {
   hideVisuals()
-  const visuals = result.explain ?? {}
+  visualResult = result
+  explainResult(result)
+}
+
+$("#under-hood").ontoggle = async (event) => {
+  const run = ++visualRun
+  const details = event.currentTarget
+  if (!details.open || !visualResult) {
+    stopFace3d?.()
+    return
+  }
+  const visuals = visualResult.explain ?? {}
   const overlay = visuals.face_overlay ?? {}
   $("#viz-result").hidden = false
   $("#arms-chart-box").hidden = false
   if (!drawArmsChart($("#arms-chart"), visuals.arms_trace)) $("#arms-chart-box").hidden = true
-  explainResult(result)
   if (!overlay.neutral?.length) return
   const weaker = overlay.weaker === "left" ? "Left" : "Right"
   $("#face3d-label").textContent = overlay.less_percent >= 10
@@ -158,10 +173,11 @@ async function showVisuals(result) {
   $("#face3d-box").hidden = false
   try {
     const module = await import("./viz_face3d.js")
+    if (run !== visualRun || !details.open) return
     stopFace3d = module.stopFace3d
     if (!module.showFace3d($("#face3d"), overlay, getTessellation(), videoAspect(), $("#face3d-play"))) $("#face3d-box").hidden = true
   } catch {
-    $("#face3d-box").hidden = true
+    if (run === visualRun) $("#face3d-box").hidden = true
   }
 }
 
@@ -320,9 +336,11 @@ let voiceGeneration = 0
 let finishVoice
 let listening
 let silenceTimer
+let reviewTimer
 let submitVoice
-const VOICE_PAUSE_MS = 1200
-const VOICE_FINALIZE_MS = 700
+const VOICE_PAUSE_MS = 2200
+const VOICE_FINALIZE_MS = 900
+const VOICE_REVIEW_MS = 5000
 const NO_ANSWER_MS = 20000
 let micBlocked = false
 let busy = false
@@ -426,6 +444,8 @@ $("#replay-agent").onclick = () => speakThenListen($("#agent-say").textContent, 
 
 function stopListening() {
   clearTimeout(silenceTimer)
+  clearTimeout(reviewTimer)
+  $("#voice-review").hidden = true
   const recognition = listening
   listening = undefined
   submitVoice = undefined
@@ -436,8 +456,8 @@ function stopListening() {
   $("#talk").hidden = !(SpeechInput && agentState)
 }
 
-function startListening() {
-  if (!SpeechInput || micBlocked || busy) {
+function startListening(requested = false) {
+  if (!SpeechInput || micBlocked || busy || (!requested && $("#family-message").value.trim())) {
     $("#talk").hidden = !SpeechInput
     return
   }
@@ -445,6 +465,7 @@ function startListening() {
   const recognition = new SpeechInput()
   let heard = ""
   let finishing = false
+  let sendImmediately = false
   listening = recognition
   recognition.lang = SPEECH_LANG[language()]
   recognition.continuous = false
@@ -455,25 +476,43 @@ function startListening() {
   $("#talk").hidden = true
   $("#send-voice").hidden = false
 
-  function sendHeard() {
+  function finishTranscript() {
     if (listening !== recognition) return
     stopListening()
-    if (heard) sendMessage(heard)
+    if (!heard) return
+    const input = $("#family-message")
+    input.value = heard.slice(0, input.maxLength)
+    if (sendImmediately) {
+      sendDraft()
+      return
+    }
+    const review = $("#voice-review")
+    review.hidden = false
+    submitVoice = sendDraft
+    if (document.activeElement === input) {
+      pauseVoiceReview()
+    } else {
+      review.textContent = "Voice reply ready. Sending in 5 seconds. Select the text to edit."
+      reviewTimer = setTimeout(sendDraft, VOICE_REVIEW_MS)
+    }
   }
 
-  submitVoice = () => {
-    if (listening !== recognition || finishing) return
+  function finishRecording(now) {
+    if (listening !== recognition) return
+    sendImmediately ||= now
+    if (finishing) return
     finishing = true
     $("#mic-label").textContent = "Finishing voice reply…"
     $("#send-voice").disabled = true
     clearTimeout(silenceTimer)
-    silenceTimer = setTimeout(sendHeard, VOICE_FINALIZE_MS)
+    silenceTimer = setTimeout(finishTranscript, VOICE_FINALIZE_MS)
     try {
       recognition.stop()
     } catch {
-      sendHeard()
+      finishTranscript()
     }
   }
+  submitVoice = () => finishRecording(true)
 
   silenceTimer = setTimeout(() => {
     if (listening !== recognition) return
@@ -490,7 +529,7 @@ function startListening() {
     $("#live-transcript").textContent = heard
     if (!finishing && heard) {
       clearTimeout(silenceTimer)
-      silenceTimer = setTimeout(submitVoice, VOICE_PAUSE_MS)
+      silenceTimer = setTimeout(() => finishRecording(false), VOICE_PAUSE_MS)
     }
   }
   recognition.onerror = (event) => {
@@ -502,7 +541,7 @@ function startListening() {
   recognition.onend = () => {
     if (listening !== recognition) return
     if (heard || finishing) {
-      sendHeard()
+      finishTranscript()
       return
     }
     if (micBlocked) {
@@ -525,7 +564,7 @@ function startListening() {
 $("#talk").onclick = () => {
   micBlocked = false
   stopVoice()
-  startListening()
+  startListening(true)
 }
 
 $("#send-voice").onclick = () => submitVoice?.()
@@ -616,12 +655,29 @@ async function sendMessage(text) {
   }
 }
 
-$("#agent-reply").onsubmit = (event) => {
-  event.preventDefault()
+function pauseVoiceReview() {
+  const review = $("#voice-review")
+  if (review.hidden) return
+  clearTimeout(reviewTimer)
+  review.textContent = "Review or edit your reply, then press Enter or Send."
+}
+
+function sendDraft() {
   const input = $("#family-message")
   const text = input.value.trim()
+  if (!text || busy || !agentState) return
   input.value = ""
   sendMessage(text)
+}
+
+$("#family-message").onfocus = pauseVoiceReview
+$("#family-message").oninput = () => {
+  if (listening) stopListening()
+  pauseVoiceReview()
+}
+$("#agent-reply").onsubmit = (event) => {
+  event.preventDefault()
+  sendDraft()
 }
 
 $("#paramedics-here").onclick = async () => {

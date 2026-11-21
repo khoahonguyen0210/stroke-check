@@ -146,3 +146,6 @@ dd { margin: 0 0 .5rem; overflow-wrap: anywhere; }
 .legend-left { color: #196552; font-weight: 700; }
 .legend-right { color: #c26a12; font-weight: 700; }
 @media (max-width: 760px) { #viz-result { grid-template-columns: 1fr; } }
+
+#voice-review { color: var(--muted); font-size: .92rem; }
+#under-hood #viz-result { margin-top: 1rem; }

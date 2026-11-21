@@ -84,16 +84,6 @@
         <span class="explain-badge" id="explain-badge">Explained by Nemotron</span>
         <p id="explain-text"></p>
       </div>
-      <div id="viz-result" hidden>
-        <figure id="face3d-box" hidden>
-          <div id="face3d"></div>
-          <figcaption><strong id="face3d-label"></strong><span>Your face mesh from landmarks only (no video kept). Red = left and right sides moved differently. Smile movement shown 2× so it's easier to see. Drag to rotate.</span><button id="face3d-play" type="button">Pause smile</button></figcaption>
-        </figure>
-        <figure id="arms-chart-box" hidden>
-          <canvas id="arms-chart" aria-label="Wrist height during the hold"></canvas>
-          <figcaption><span class="legend-left">Left wrist</span> <span class="legend-right">Right wrist</span> · drop from the starting height during the 10 s hold, in shoulder-widths</figcaption>
-        </figure>
-      </div>
       <section id="emergency" hidden>
         <div class="alert-delivery">
           <div><h2>Trusted contact emails</h2><p id="alert-status" role="status" tabindex="-1"></p></div>
@@ -115,6 +105,7 @@
             <button id="talk" type="button" hidden>Tap to talk</button>
             <button id="send-voice" type="button" hidden>Send voice reply <kbd>Space / Enter</kbd></button>
           </form>
+          <p id="voice-review" role="status" hidden></p>
           <ol id="conversation-log" aria-label="Conversation"></ol>
           <div id="script-card" class="card-911" hidden>
             <h3>Read this to 911</h3>
@@ -138,6 +129,16 @@
       <button id="back-to-start" type="button">Back to start</button>
       <details id="under-hood">
         <summary>Measurements and timing</summary>
+        <div id="viz-result" hidden>
+          <figure id="face3d-box" hidden>
+            <div id="face3d"></div>
+            <figcaption><strong id="face3d-label"></strong><span>Your face mesh from landmarks only (no video kept). Red = left and right sides moved differently. Smile movement shown 2× so it's easier to see. Drag to rotate.</span><button id="face3d-play" type="button">Pause smile</button></figcaption>
+          </figure>
+          <figure id="arms-chart-box" hidden>
+            <canvas id="arms-chart" aria-label="Wrist height during the hold"></canvas>
+            <figcaption><span class="legend-left">Left wrist</span> <span class="legend-right">Right wrist</span> · drop from the starting height during the 10 s hold, in shoulder-widths</figcaption>
+          </figure>
+        </div>
         <h3>Tracked movement</h3>
         <pre id="features"></pre>
         <h3>Processing time (ms)</h3>
