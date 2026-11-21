@@ -30,9 +30,12 @@ def main():
     args = parser.parse_args()
 
     excluded = {storage.user_key(person) for person in args.exclude_person}
-    sessions = [session for session in storage.load_sessions() if session["person"] not in excluded]
+    sessions = [
+        session for session in storage.load_sessions()
+        if session["person"] not in excluded and (session["path"] / "speech.webm").is_file()
+    ]
     if len({session["person"] for session in sessions}) < 2:
-        raise SystemExit("Record labeled takes from at least two people before training.")
+        raise SystemExit("The legacy three-sign trainer needs recordings with audio from at least two people.")
 
     rows, labels, people = [], [], []
     for session in sessions:

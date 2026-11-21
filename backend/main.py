@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
-from backend import alerts, fusion, gemini_review, recording, storage
+from backend import alerts, fusion, recording, storage
 from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,57 +26,30 @@ async def read_landmarks(part: UploadFile | str):
 
 
 @app.post("/api/check")
-async def check(
-    meta: str = Form(), face: UploadFile | str = File(), arms: UploadFile | str = File(),
-    audio: UploadFile = File(), gemini_consent: bool = Form(False), gemini_demo: bool = Form(False),
-):
-    if gemini_demo and not gemini_consent:
-        raise HTTPException(422, "Consent to share the recording with Google is required for Gemini demo mode.")
+async def check(meta: str = Form(), face: UploadFile | str = File(), arms: UploadFile | str = File()):
     try:
         face_data, arms_data = await read_landmarks(face), await read_landmarks(arms)
         if not isinstance(face_data, dict) or not isinstance(arms_data, dict):
             raise ValueError("Expected landmark objects.")
-        content = await audio.read()
-        features, quality, latency = await run_in_threadpool(recording.analyze, face_data, arms_data, content, score_speech=not gemini_demo)
+        features, quality, latency = await run_in_threadpool(recording.analyze_vision, face_data, arms_data)
     except (ValueError, TypeError, KeyError, IndexError) as error:
         raise HTTPException(422, "Invalid recording.") from error
-    if gemini_demo:
-        return await run_in_threadpool(gemini_demo_result, features, quality, latency, content)
-    result = await run_in_threadpool(fusion.predict, features, quality)
+    result = fusion.predict_vision(features, quality)
     result["latency_ms"] = latency
-    if gemini_consent and result["overall"] == "retake" and all(item["ok"] for item in quality.values()):
-        result["gemini_review"] = await run_in_threadpool(gemini_review.review, features, content)
     return result
 
 
-def gemini_demo_result(features, quality, latency, audio):
-    usable = {name: values for name, values in features.items() if quality[name]["ok"]}
-    review = (
-        gemini_review.review(usable, audio if quality["speech"]["ok"] else None)
-        if usable else {"status": "poor_quality"}
-    )
-    if review["status"] == "reviewed":
-        for name in fusion.NAMES:
-            if name not in usable:
-                review["signs"][name] = "insufficient_evidence"
-    reasons = [item["reason"] for item in quality.values() if not item["ok"] and item.get("reason")]
-    return {
-        "overall": "gemini_demo", "gemini_review": review, "signs": {},
-        "features": features, "latency_ms": latency, "retake_reason": " ".join(reasons),
-    }
-
-
 @app.post("/api/collect")
-async def collect(meta: str = Form(), face: UploadFile | str = File(), arms: UploadFile | str = File(), audio: UploadFile = File(), label: str = Form()):
+async def collect(meta: str = Form(), face: UploadFile | str = File(), arms: UploadFile | str = File(), label: str = Form()):
     try:
-        path = storage.save_session(json.loads(meta), await read_landmarks(face), await read_landmarks(arms), await audio.read(), label)
+        path = storage.save_session(json.loads(meta), await read_landmarks(face), await read_landmarks(arms), None, label)
     except (KeyError, TypeError, ValueError) as error:
         raise HTTPException(422, "Invalid session data.") from error
     return {"path": (Path("data") / path.relative_to(storage.DATA)).as_posix()}
 
 
 @app.post("/api/baseline/{user}")
-async def baseline(user: str, meta: str = Form(), face: UploadFile | str = File(), arms: UploadFile | str = File(), audio: UploadFile = File()):
+async def baseline(user: str, meta: str = Form(), face: UploadFile | str = File(), arms: UploadFile | str = File()):
     return {"saved": False}
 
 

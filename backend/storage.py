@@ -19,7 +19,8 @@ def user_key(user):
 
 def save_session(meta, face, arms, audio, label):
     labels = list(dict.fromkeys(label.split(",")))
-    if set(labels) - LABELS or ("normal" in labels and len(labels) > 1):
+    allowed = LABELS if audio is not None else LABELS - {"slurred"}
+    if set(labels) - allowed or ("normal" in labels and len(labels) > 1):
         raise ValueError("Invalid labels.")
     person = user_key(meta["name"])
     now = datetime.now().astimezone()
@@ -33,7 +34,8 @@ def save_session(meta, face, arms, audio, label):
     }
     for name, value in (("face", face), ("arms", arms)):
         (path / f"{name}.json").write_text(json.dumps(value))
-    (path / "speech.webm").write_bytes(audio)
+    if audio is not None:
+        (path / "speech.webm").write_bytes(audio)
     (path / "meta.json").write_text(json.dumps(details))
     return path
 

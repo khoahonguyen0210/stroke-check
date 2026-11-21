@@ -27,7 +27,6 @@ function drawFace(points) {
 }
 
 const $ = (selector) => document.querySelector(selector)
-const sentence = "The quick brown fox jumps over the lazy dog near the river bank."
 let visionTasks
 
 async function createTasks() {
@@ -37,9 +36,6 @@ async function createTasks() {
   return {
     face: await createFace({ vision, files }),
     pose: await vision.PoseLandmarker.createFromOptions(files, options("/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task")),
-    hands: await vision.HandLandmarker.createFromOptions(files, {
-      ...options("/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"), numHands: 2,
-    }),
   }
 }
 
@@ -48,6 +44,9 @@ const xyz = ({ x, y, z }) => [x, y, z]
 function capture(duration, message, read) {
   const frames = []
   const start = performance.now()
+  $("#prompt").textContent = message
+  $("#capture-progress").max = duration
+  $("#capture-progress").value = 0
   let lastVideoTime = -1
   return new Promise((resolve, reject) => {
     function frame(now) {
@@ -57,7 +56,9 @@ function capture(duration, message, read) {
         return
       }
       try {
-        $("#prompt").textContent = `${message} (${Math.ceil((duration - elapsed) / 1000)} s)`
+        const remaining = `${Math.ceil((duration - elapsed) / 1000)}s`
+        if ($("#countdown").textContent !== remaining) $("#countdown").textContent = remaining
+        $("#capture-progress").value = elapsed
         if (lastVideoTime !== video.currentTime) {
           lastVideoTime = video.currentTime
           frames.push({ t: Math.max(0, elapsed / 1000), ...read(now) })
@@ -71,40 +72,31 @@ function capture(duration, message, read) {
   })
 }
 
-function speech(stream) {
-  return new Promise((resolve, reject) => {
-    const recorder = new MediaRecorder(new MediaStream(stream.getAudioTracks()), { mimeType: "audio/webm" })
-    const chunks = []
-    const done = $("#done")
-    let timer
-    const stop = () => {
-      if (recorder.state === "recording") recorder.stop()
+function drawArms(points) {
+  canvas.width = video.videoWidth
+  canvas.height = video.videoHeight
+  context.strokeStyle = "#63f0d9"
+  context.fillStyle = context.strokeStyle
+  context.lineWidth = 4
+  for (const arm of [[11, 13, 15], [12, 14, 16]]) {
+    const joints = arm.map((index) => points[index])
+    if (joints.some((point) => !point || point.visibility < 0.5)) continue
+    context.beginPath()
+    context.moveTo(joints[0].x * canvas.width, joints[0].y * canvas.height)
+    for (const point of joints.slice(1)) context.lineTo(point.x * canvas.width, point.y * canvas.height)
+    context.stroke()
+    for (const point of joints) {
+      context.beginPath()
+      context.arc(point.x * canvas.width, point.y * canvas.height, 5, 0, Math.PI * 2)
+      context.fill()
     }
-    const cleanup = () => {
-      clearInterval(timer)
-      done.hidden = true
-      $("#speech-tip").hidden = true
-      done.onclick = null
-    }
-    recorder.ondataavailable = ({ data }) => chunks.push(data)
-    recorder.onerror = ({ error }) => { cleanup(); reject(error) }
-    recorder.onstop = () => { cleanup(); resolve(new Blob(chunks, { type: recorder.mimeType })) }
-    recorder.start()
-    done.hidden = false
-    $("#speech-tip").hidden = false
-    done.onclick = stop
-    const started = performance.now()
-    $("#prompt").textContent = sentence + " (8 s)"
-    timer = setInterval(() => {
-      const remaining = Math.ceil((8000 - (performance.now() - started)) / 1000)
-      if (remaining <= 0) stop()
-      else $("#prompt").textContent = `${sentence} (${remaining} s)`
-    }, 100)
-  })
+  }
 }
 
 async function postRecording(stream, tasks, collecting) {
   const face = []
+  $("#capture-step").textContent = "Step 1 of 2 · Face"
+  $("#capture-hint").textContent = "Keep your head still and face the camera."
   const phases = [["relax", "Relax your face"], ["smile", "Smile big"], ["brows", "Raise your eyebrows"]]
   for (const [index, [phase, message]] of phases.entries()) {
     face.push(...await capture(3000, message, (now) => {
@@ -113,21 +105,18 @@ async function postRecording(stream, tasks, collecting) {
       return { phase, landmarks: points.map(xyz) }
     }).then((frames) => frames.map((frame) => ({ ...frame, t: frame.t + index * 3 }))))
   }
-  context.clearRect(0, 0, canvas.width, canvas.height)
-  const arms = await capture(10000, "Raise both arms straight out, palms up, and hold still", (now) => {
+  $("#capture-step").textContent = "Step 2 of 2 · Arms"
+  $("#capture-hint").textContent = "Keep both wrists in view, with your arms straight out in front at shoulder height."
+  function readPose(now) {
     const pose = tasks.pose.detectForVideo(video, now).landmarks[0] ?? []
-    const hands = tasks.hands.detectForVideo(video, now)
-    return {
-      pose: pose.map((point) => [...xyz(point), point.visibility]),
-      hands: hands.landmarks.map((points, index) => ({
-        side: hands.handedness[index][0].categoryName, landmarks: points.map(xyz),
-      })),
-    }
-  })
-  const audio = await speech(stream)
+    drawArms(pose)
+    return { pose: pose.map((point) => [...xyz(point), point.visibility]), hands: [] }
+  }
+  await capture(3000, "Raise both arms, palms up", readPose)
+  const arms = await capture(10000, "Hold both arms steady", readPose)
   stream.getTracks().forEach((track) => track.stop())
-  $("#preview").hidden = true
-  $("#prompt").textContent = "Submitting recording…"
+  $("#capture").hidden = true
+  status.textContent = collecting ? "Saving recording…" : "Checking face and arm movement…"
   const data = new FormData()
   data.set("meta", JSON.stringify({
     name: $("#name").value.trim(), user_agent: navigator.userAgent,
@@ -135,69 +124,48 @@ async function postRecording(stream, tasks, collecting) {
   }))
   data.set("face", new Blob([JSON.stringify({ fps: face.length / 9, frames: face })], { type: "application/json" }), "face.json")
   data.set("arms", new Blob([JSON.stringify({ fps: arms.length / 10, frames: arms })], { type: "application/json" }), "arms.json")
-  data.set("audio", audio, "speech.webm")
   if (collecting) data.set("label", $("#label").value)
-  else {
-    if ($("#gemini-consent").checked) data.set("gemini_consent", "true")
-    if ($("#gemini-demo").checked) data.set("gemini_demo", "true")
-  }
   const response = await fetch(collecting ? "/api/collect" : "/api/check", { method: "POST", body: data })
   const result = await response.json().catch(() => null)
   if (!response.ok || !result) {
     throw new Error(typeof result?.detail === "string" ? result.detail : `The recording could not be submitted (HTTP ${response.status}).`)
   }
   if (collecting) status.textContent = `Saved to ${result.path}`
-  else renderResult(result)
+  else {
+    status.textContent = ""
+    renderResult(result)
+  }
 }
 
 function renderResult(result) {
-  const geminiDemo = result.overall === "gemini_demo"
-  const review = result.gemini_review
-  $("#result").hidden = false
+  const panel = $("#result")
+  panel.hidden = false
+  panel.dataset.outcome = result.overall
   $("#features").textContent = JSON.stringify(result.features, null, 2)
-  $("#scores").textContent = JSON.stringify(geminiDemo ? review.signs ?? {} : Object.fromEntries(Object.entries(result.signs).map(([name, sign]) => [name, sign.p])), null, 2)
   $("#latency").textContent = JSON.stringify(result.latency_ms, null, 2)
   $("#outcome").textContent = {
-    warning: "Possible stroke signs. Call 911 now.",
-    clear: "No warning signs detected by this check",
-    retake: "Recording needs a retake",
-    gemini_demo: "Gemini demo result",
+    warning: "Possible sign detected. Call 911 now.",
+    clear: "No face or arm sign observed",
+    retake: "Camera check needs a retake",
   }[result.overall]
-  $("#retake-reason").textContent = result.retake_reason ?? ""
-  const incomplete = geminiDemo && (
-    review.status !== "reviewed" || Object.values(review.signs).includes("insufficient_evidence")
-  )
-  $("#retake").hidden = result.overall !== "retake" && !incomplete
+  $("#retake-reason").textContent = result.overall === "retake" ? result.retake_reason ?? "" : ""
+  $("#retake").hidden = result.overall === "warning"
+  $("#retake").textContent = result.overall === "retake" ? "Retake check" : "Run another check"
   $("#signs").replaceChildren(...Object.entries(result.signs).map(([name, sign]) => {
     const card = document.createElement("article")
     card.className = sign.flag ? "flagged" : "sign"
     const title = document.createElement("h3")
-    title.textContent = { face: "Face droop", arms: "Arm drift", speech: "Slurred speech" }[name]
+    title.textContent = { face: "Facial asymmetry", arms: "Arm drift" }[name]
     const detail = document.createElement("p")
-    const assessment = sign.uncertain ? "Uncertain" : sign.flag ? "Flagged" : "Below threshold"
-    detail.textContent = sign.p == null ? "Unavailable" : `${assessment} · ${Math.round(sign.p * 100)}%`
+    detail.textContent = {
+      possible_sign: "Possible sign",
+      unavailable: "Camera view insufficient",
+      not_observed: "Sign not observed",
+    }[sign.status]
     card.append(title, detail)
     return card
   }))
-  $("#gemini-heading").textContent = geminiDemo ? "Per-sign ratings" : "Gemini second review"
-  $("#gemini-review").hidden = !review
-  $("#gemini-signs").replaceChildren()
-  if (review) {
-    const labels = { face: "Face droop", arms: "Arm drift", speech: "Slurred speech" }
-    const observations = {
-      possible_sign: "Possible sign. If you suspect a stroke, call 911 now.",
-      insufficient_evidence: "Insufficient evidence",
-      sign_not_observed: "Sign not observed in this review",
-    }
-    $("#gemini-summary").textContent = review.status === "reviewed"
-      ? (geminiDemo ? "Experimental ratings from this recording." : "Experimental observations. The recording still needs a retake.")
-      : (review.status === "poor_quality" ? "Recording quality was too low for a review." : "Gemini review is unavailable.")
-    for (const [name, observation] of Object.entries(review.signs ?? {})) {
-      const item = document.createElement("li")
-      item.textContent = `${labels[name]} · ${observations[observation]}`
-      $("#gemini-signs").append(item)
-    }
-  }
+  $("#outcome").focus()
   if (result.overall === "warning") startEmergency(result)
 }
 
@@ -209,41 +177,48 @@ $("#setup").onsubmit = async (event) => {
     return
   }
   const collecting = $("#collect").checked
-  if (!collecting && $("#gemini-demo").checked && !$("#gemini-consent").checked) {
-    status.textContent = "Allow Google Gemini to receive the speech audio and measurements before starting the Gemini-only demo."
-    $("#gemini-consent").focus()
-    return
-  }
   resetEmergency()
   $("#result").hidden = true
   let stream
   const inputs = [...$("#setup").elements]
   inputs.forEach((input) => { input.disabled = true })
+  $(".setup-layout").hidden = true
+  $("#contacts").hidden = true
   status.textContent = "Loading camera and models…"
   try {
     visionTasks ??= createTasks().catch((error) => { visionTasks = null; throw error })
     const tasks = await visionTasks
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: true,
-      audio: { noiseSuppression: true, echoCancellation: true, channelCount: 1 },
-    })
+    stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
     video.srcObject = stream
     await video.play()
-    $("#preview").hidden = false
+    $("#capture").hidden = false
     status.textContent = ""
-    await postRecording(stream, tasks, collecting)
+    const recording = postRecording(stream, tasks, collecting)
+    $("#prompt").focus()
+    await recording
   } catch (error) {
     status.textContent = error.message
   } finally {
     stream?.getTracks().forEach((track) => track.stop())
     video.srcObject = null
-    $("#preview").hidden = true
+    $("#capture").hidden = true
     $("#prompt").textContent = ""
+    if ($("#result").hidden) $(".setup-layout").hidden = false
     inputs.forEach((input) => { input.disabled = false })
   }
 }
 
 $("#retake").onclick = () => $("#setup").requestSubmit()
+$("#back-to-start").onclick = () => {
+  if (alertPending) {
+    $("#alert-status").focus()
+    return
+  }
+  resetEmergency()
+  $("#result").hidden = true
+  $(".setup-layout").hidden = false
+  $("#start").focus()
+}
 
 async function api(path, payload) {
   const options = payload === undefined ? {} : {
@@ -273,6 +248,7 @@ $("#contacts-open").onclick = async () => {
   if (!$("#name").reportValidity()) return
   contactsUser = encodeURIComponent($("#name").value.trim())
   $("#contacts").hidden = false
+  $("#contact-form input").focus()
   $("#contacts-status").textContent = ""
   try {
     showContacts(await api(`/api/contacts/${contactsUser}`))
@@ -296,7 +272,7 @@ $("#contact-form").onsubmit = async (event) => {
 $("#contacts-test").onclick = async (event) => {
   event.target.disabled = true
   try {
-    $("#contacts-status").textContent = "Sending test alert…"
+    $("#contacts-status").textContent = "Sending test email…"
     const { sent } = await api(`/api/alert/test/${contactsUser}`, {})
     $("#contacts-status").textContent = deliverySummary(sent)
   } catch (error) {
@@ -315,7 +291,6 @@ function resetEmergency() {
   emergencyRun += 1
   agentState = undefined
   clearInterval(lastNormalTimer)
-  window.speechSynthesis?.cancel()
   $("#emergency").hidden = true
   $("#agent-say").textContent = ""
   $("#last-normal").textContent = "Last known normal time is unknown."
@@ -331,11 +306,6 @@ function updateAgent(response, run) {
   agentState = response.state
   $("#agent-answer button").disabled = false
   $("#agent-say").textContent = response.say ?? ""
-  if (response.say && window.speechSynthesis) {
-    window.speechSynthesis.cancel()
-    window.speechSynthesis.speak(new SpeechSynthesisUtterance(response.say))
-  }
-
   const handoff = response.handoff ?? {}
   const facts = handoff.facts ?? {}
   const known = facts.last_known_normal ?? agentState?.timer?.last_known_normal
@@ -428,7 +398,7 @@ function startAlertCountdown(user, result) {
   async function tick() {
     const remaining = Math.ceil((deadline - Date.now()) / 1000)
     if (remaining > 0) {
-      output.textContent = `Alerting your trusted contacts in ${remaining} seconds.`
+      output.textContent = `Emailing trusted contacts in ${remaining} seconds. Keep this page open.`
       return
     }
     clearInterval(timer)
@@ -445,16 +415,4 @@ function startAlertCountdown(user, result) {
   }
   const timer = setInterval(tick, 250)
   tick()
-}
-
-
-$("#benchmark").ontoggle = async (event) => {
-  if (!event.target.open) return
-  const output = $("#benchmark-data")
-  output.textContent = "Loading benchmark results…"
-  try {
-    output.textContent = JSON.stringify(await api("/api/benchmarks"), null, 2)
-  } catch (error) {
-    output.textContent = error.message
-  }
 }

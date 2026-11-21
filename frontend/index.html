@@ -4,80 +4,83 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Stroke Check</title>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@600;700&display=swap">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <main>
-    <h1>Stroke Check</h1>
-    <p>If you suspect a stroke, call 911 now.</p>
-    <form id="setup">
-      <label>Name <input id="name" required maxlength="80"></label>
-      <label><input id="collect" type="checkbox"> Data collection mode</label>
-      <fieldset id="labels" hidden>
-        <legend>Take details</legend>
-        <label>Signs <select id="label">
-          <option value="normal">Normal</option>
-          <option value="face_droop">Face droop</option>
-          <option value="arm_drift">Arm drift</option>
-          <option value="slurred">Slurred speech</option>
-          <option value="face_droop,arm_drift">Face and arms</option>
-          <option value="face_droop,slurred">Face and speech</option>
-          <option value="arm_drift,slurred">Arms and speech</option>
-          <option value="face_droop,arm_drift,slurred">All three</option>
-        </select></label>
-        <label>Lighting <select id="lighting"><option value="good">Good</option><option value="dim">Dim</option></select></label>
-        <label><input id="glasses" type="checkbox"> Glasses</label>
-      </fieldset>
-      <label><input id="share-location" type="checkbox"> Share location with trusted contacts if alerted</label>
-      <label><input id="gemini-demo" type="checkbox"> Gemini-only demo</label>
-      <label><input id="gemini-consent" type="checkbox"> Allow sending speech audio and measurements to Google Gemini</label>
-      <button id="start">Start check</button>
-      <button id="contacts-open" type="button">Trusted contacts</button>
-    </form>
+    <header class="masthead">
+      <a class="brand" href="/" aria-label="Stroke Check home"><span class="brand-mark" aria-hidden="true">+</span> Stroke Check</a>
+      <p>Suspect a stroke? <strong>Call 911 now.</strong></p>
+    </header>
+    <div class="setup-layout">
+      <div class="intro">
+        <h1>Check face and arm movement</h1>
+        <p>Use your camera for two guided checks. Face the camera, then step back enough to keep both arms in view.</p>
+        <ol class="steps">
+          <li><strong>Face</strong><span>Relax, smile, then raise your eyebrows.</span></li>
+          <li><strong>Arms</strong><span>Extend both arms forward at shoulder height, palms up.</span></li>
+        </ol>
+      </div>
+      <form id="setup">
+        <h2>Start a check</h2>
+        <label class="name-input">Name <input id="name" required maxlength="80" autocomplete="given-name" placeholder="Enter your name"></label>
+        <label><input id="collect" type="checkbox"> Data collection mode</label>
+        <fieldset id="labels" hidden>
+          <legend>Take details</legend>
+          <label>Signs <select id="label">
+            <option value="normal">Normal</option>
+            <option value="face_droop">Face droop</option>
+            <option value="arm_drift">Arm drift</option>
+            <option value="face_droop,arm_drift">Face and arms</option>
+          </select></label>
+          <label>Lighting <select id="lighting"><option value="good">Good</option><option value="dim">Dim</option></select></label>
+          <label><input id="glasses" type="checkbox"> Glasses</label>
+        </fieldset>
+        <label><input id="share-location" type="checkbox"> Share location with trusted contacts if alerted</label>
+        <div class="setup-actions">
+          <button id="start">Start camera check</button>
+          <button id="contacts-open" type="button">Trusted contact emails</button>
+        </div>
+      </form>
+    </div>
     <section id="contacts" hidden>
-      <h2>Trusted contacts</h2>
+      <h2>Trusted contact emails</h2>
+      <p>Save up to three people who agree to receive warning emails. Send a test email before the demo.</p>
       <ul id="contact-list"></ul>
       <form id="contact-form">
         <label>Name <input name="name" required maxlength="80"></label>
         <label>Relationship <input name="relationship" required maxlength="80"></label>
         <label>Email <input name="email" type="email" required maxlength="254"></label>
-        <label>Phone (optional) <input name="phone" type="tel" maxlength="40"></label>
         <label><input name="consent" type="checkbox" required> This contact agreed to receive alerts</label>
         <button>Save contact</button>
       </form>
-      <button id="contacts-test" type="button">Send test alert</button>
+      <button id="contacts-test" type="button">Send test email</button>
       <button id="contacts-close" type="button">Close</button>
       <p id="contacts-status" role="status"></p>
     </section>
-    <h2 id="prompt"></h2>
-    <p id="speech-tip" hidden>Speak at a normal volume near the microphone. Ask anyone nearby to pause while you read.</p>
-    <button id="done" hidden>Done</button>
-    <details id="benchmark">
-      <summary>Benchmarks</summary>
-      <pre id="benchmark-data" role="status"></pre>
-    </details>
+    <p id="status" role="status"></p>
+    <section id="capture" hidden>
+      <div class="capture-top">
+        <div>
+          <p id="capture-step"></p>
+          <h2 id="prompt" tabindex="-1" aria-live="polite"></h2>
+          <p id="capture-hint"></p>
+        </div>
+        <span id="countdown" aria-hidden="true"></span>
+      </div>
+      <progress id="capture-progress" aria-label="Current step progress"></progress>
+      <div id="preview"><video autoplay muted playsinline></video><canvas aria-hidden="true"></canvas></div>
+    </section>
     <section id="result" hidden>
-      <h2 id="outcome" role="alert"></h2>
+      <h2 id="outcome" tabindex="-1"></h2>
       <p>This is a warning tool, not a diagnosis. If you suspect a stroke, call 911 now.</p>
       <p id="retake-reason"></p>
-      <section id="gemini-review" hidden>
-        <h3 id="gemini-heading">Gemini second review</h3>
-        <p id="gemini-summary"></p>
-        <ul id="gemini-signs"></ul>
-      </section>
       <div id="signs"></div>
-      <details id="under-hood">
-        <summary>Under the hood</summary>
-        <h3>Raw features</h3>
-        <pre id="features"></pre>
-        <h3>Per-sign model scores</h3>
-        <pre id="scores"></pre>
-        <h3>Latency (ms)</h3>
-        <pre id="latency"></pre>
-      </details>
       <section id="emergency" hidden>
-        <h2>Emergency assistant</h2>
+        <h2>Trusted contact emails</h2>
+        <p id="alert-status" role="status" tabindex="-1"></p>
+        <button id="cancel-alert" type="button">Cancel email alerts</button>
+        <h3>Emergency assistant</h3>
         <p id="last-normal">Last known normal time is unknown.</p>
         <p id="agent-say" role="status"></p>
         <form id="agent-answer">
@@ -89,14 +92,17 @@
         <a id="print-handoff" target="_blank" rel="noopener" hidden>Printable handoff</a>
         <h3>Agent actions</h3>
         <ol id="agent-actions"></ol>
-        <h3>Trusted contact alerts</h3>
-        <p id="alert-status" role="status" tabindex="-1"></p>
-        <button id="cancel-alert" type="button">Cancel — false alarm</button>
       </section>
       <button id="retake" type="button" hidden>Retake</button>
+      <button id="back-to-start" type="button">Back to start</button>
+      <details id="under-hood">
+        <summary>Measurements and timing</summary>
+        <h3>Tracked movement</h3>
+        <pre id="features"></pre>
+        <h3>Processing time (ms)</h3>
+        <pre id="latency"></pre>
+      </details>
     </section>
-    <p id="status" role="status"></p>
-    <div id="preview" hidden><video autoplay muted playsinline></video><canvas></canvas></div>
   </main>
   <script type="module" src="/app.js"></script>
 </body>

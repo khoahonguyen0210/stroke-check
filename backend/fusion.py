@@ -55,3 +55,41 @@ def predict(features, quality):
         reason = "One or more scores are uncertain."
     overall = "warning" if any(item["flag"] for item in signs.values()) else "retake" if reason else "clear"
     return {"overall": overall, "retake_reason": reason, "signs": signs, "features": features, "latency_ms": {}}
+
+
+
+def predict_vision(features, quality):
+    face = features["face"]
+    arms = features["arms"]
+    face_threshold = 0.5
+    arm_threshold = 0.35
+    left_drop = arms.get("left_drop", 0)
+    right_drop = arms.get("right_drop", 0)
+    scores = {
+        "face": face.get("smile_asymmetry") if max(face.get("smile_left", 0), face.get("smile_right", 0)) >= 0.05 else None,
+        "arms": abs(max(0, left_drop) - max(0, right_drop)) if arms else None,
+    }
+    thresholds = {"face": face_threshold, "arms": arm_threshold}
+    reasons = {
+        "face": "Smile fully with your face centered and well lit.",
+        "arms": "Keep both wrists in view for the full hold.",
+    }
+    signs = {}
+    for name, score in scores.items():
+        valid = quality[name]["ok"] and score is not None and isfinite(score)
+        flag = valid and score >= thresholds[name]
+        signs[name] = {
+            "flag": flag,
+            "p": None,
+            "status": "possible_sign" if flag else "not_observed" if valid else "unavailable",
+            "measurement": score if valid else None,
+        }
+    warning = any(sign["flag"] for sign in signs.values())
+    incomplete = any(sign["status"] == "unavailable" for sign in signs.values())
+    notes = [quality[name].get("reason") or reasons[name] for name, sign in signs.items() if sign["status"] == "unavailable"]
+    return {
+        "overall": "warning" if warning else "retake" if incomplete else "clear",
+        "retake_reason": " ".join(notes),
+        "signs": signs,
+        "features": features,
+    }

@@ -50,7 +50,7 @@ def deliver(user, subject, text):
 
 
 def send(user, result, detected_at, location=None):
-    names = {"face": "face droop", "arms": "arm drift", "speech": "slurred speech"}
+    names = {"face": "face droop", "arms": "arm drift"}
     signs = ", ".join(label for sign, label in names.items() if result.get("signs", {}).get(sign, {}).get("flag") is True)
     if not signs:
         return []

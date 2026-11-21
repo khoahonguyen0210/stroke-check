@@ -9,7 +9,7 @@ from backend import arms, face, storage
 SPEECH_MODEL = Path(__file__).resolve().parents[1] / "models" / "speech.joblib"
 
 
-def analyze(face_json, arms_json, audio=None, webm_path=None, sentence=storage.SENTENCE, *, score_speech=True):
+def analyze_vision(face_json, arms_json):
     features, quality, latency = {}, {}, {}
     for name, module, recording in (("face", face, face_json), ("arms", arms, arms_json)):
         start = perf_counter()
@@ -17,6 +17,11 @@ def analyze(face_json, arms_json, audio=None, webm_path=None, sentence=storage.S
         quality[name] = module.quality(recording)
         latency[name] = round((perf_counter() - start) * 1000, 2)
 
+    return features, quality, latency
+
+
+def analyze(face_json, arms_json, audio=None, webm_path=None, sentence=storage.SENTENCE):
+    features, quality, latency = analyze_vision(face_json, arms_json)
     start = perf_counter()
     try:
         from backend import speech
@@ -27,7 +32,7 @@ def analyze(face_json, arms_json, audio=None, webm_path=None, sentence=storage.S
             wav = speech.to_wav(temporary)
             quality["speech"] = speech.quality(wav)
             features["speech"] = {}
-            if score_speech and quality["speech"]["ok"]:
+            if quality["speech"]["ok"]:
                 if SPEECH_MODEL.is_file():
                     features["speech"] = speech.features(wav, sentence)
                     probability = features["speech"].get("p_slurred")
