@@ -53,6 +53,23 @@ NO_MATCH = {
     "vi": "Hãy hỏi nhân viên tổng đài 911.",
 }
 
+CARE_ANSWERS = {
+    "call_911": ("Tell the dispatcher which signs you saw and when they started.", "Dígale al operador qué señales vio y cuándo empezaron.", "Hãy báo cho tổng đài biết những dấu hiệu bạn thấy và thời điểm bắt đầu."),
+    "symptoms_go_away": ("These symptoms still need urgent care if they improve. Tell the dispatcher what changed.", "Aunque mejoren los síntomas, sigue siendo urgente. Dígale al operador qué cambió.", "Dù triệu chứng giảm, người đó vẫn cần được cấp cứu. Hãy báo cho tổng đài biết điều gì đã thay đổi."),
+    "note_the_time": ("Tell the dispatcher when the signs started or when the person was last seen acting as usual.", "Dígale al operador cuándo empezaron las señales o cuándo vio a la persona comportarse como siempre por última vez.", "Hãy báo cho tổng đài khi dấu hiệu bắt đầu hoặc lần cuối người đó vẫn bình thường."),
+    "do_not_drive": ("Do not drive to the hospital. The ambulance team can begin care on the way.", "No los lleve al hospital en carro. El equipo de la ambulancia puede comenzar la atención en el camino.", "Đừng tự lái xe đưa người đó đến bệnh viện. Đội cấp cứu có thể chăm sóc họ trên đường đi."),
+    "hospital_questions": ("Tell paramedics what changed, when the person was last seen as usual, and which medications they take, if known.", "Dígale a los paramédicos qué cambió, cuándo vio a la persona normal por última vez y qué medicamentos toma, si lo sabe.", "Hãy cho nhân viên cấp cứu biết điều gì đã thay đổi, lần cuối người đó còn bình thường và danh sách thuốc nếu biết."),
+    "food_drink_medicine": ("Do not give food, drink, or medicine, including aspirin. Follow the dispatcher’s instructions.", "No le dé alimentos, bebidas ni medicamentos, incluida la aspirina. Siga las instrucciones del operador.", "Không cho người đó ăn, uống hay dùng thuốc, kể cả aspirin. Hãy làm theo hướng dẫn của tổng đài."),
+    "while_waiting": ("Stay with the person and follow the dispatcher’s instructions. Have their medication list ready if you know it.", "Quédese con la persona y siga las instrucciones del operador. Tenga a mano su lista de medicamentos si la conoce.", "Hãy ở bên người đó và làm theo hướng dẫn của tổng đài. Chuẩn bị danh sách thuốc nếu bạn biết."),
+    "other_symptoms": ("Tell the dispatcher about any sudden change in speech, vision, balance, or strength.", "Dígale al operador si nota cambios repentinos en el habla, la visión, el equilibrio o la fuerza.", "Hãy báo cho tổng đài nếu bạn nhận thấy thay đổi đột ngột về lời nói, thị lực, thăng bằng hoặc sức lực."),
+}
+CARE_ANSWERS["be_fast"] = CARE_ANSWERS["other_symptoms"]
+CARE_ALONE = ("Follow the dispatcher’s instructions while help is on the way.", "Siga las instrucciones del operador mientras llega la ayuda.", "Hãy làm theo hướng dẫn của tổng đài trong khi chờ người đến giúp.")
+CARE_FOLLOW_UP = r"^(?:why(?: is that)?|why (?:not|shouldn['’]?t (?:i|we))|can you explain(?: that)?|¿?por qué|tại sao)[?.!]*$"
+CARE_IMPROVED = r"\b(?:feel(?:s|ing)? better|symptoms (?:stopped|are gone)|seems? better|mejor|đỡ rồi)\b"
+CARE_DRIVE_REASON = ("Paramedics can start care during transport and alert the hospital before arrival.", "Los paramédicos pueden empezar a atenderlo durante el traslado y avisar al hospital antes de llegar.", "Nhân viên cấp cứu có thể chăm sóc người đó trên đường và báo trước cho bệnh viện.")
+CARE_WORRY = r"\b(?:scared|worried|panicking|afraid|asustad[oa]|miedo|lo lắng|sợ)\b"
+
 LINES = {
     "call_911": {"en": "Call 911 now.", "es": "Llame al 911 ahora.", "vi": "Hãy gọi 911 ngay."},
     "follow_dispatcher": {"en": "Follow the dispatcher’s instructions.", "es": "Siga las instrucciones del operador.", "vi": "Hãy làm theo hướng dẫn của nhân viên tổng đài."},
@@ -212,6 +229,11 @@ def _say(state, text, kind):
 def speak(state, text):
     if state.get("asked_this_turn"):
         return {"ok": False, "error": "You already asked a question this turn. Call finish_turn and wait for the answer."}
+    if state.get("care_question") and not state.get("guided"):
+        guidance = state.get("turn_guidance")
+        if guidance is None:
+            return {"ok": False, "error": "Use lookup_guidance first for this care question."}
+        return speak_guidance(state, guidance)
     return _say(state, text, "speak")
 
 
@@ -298,19 +320,59 @@ def guidance_sections():
     return sections
 
 
+def guidance_match(question, sections):
+    q = [word for word in _norm(question) if word not in STOPWORDS]
+
+    def score(section):
+        keys = [key.strip() for key in section["keywords"].split(",")]
+        keywords = sum(2 for key in keys if key and key in " ".join(q) and (" " in key or key in q))
+        return keywords + sum(word in _norm(section["text"]) for word in q)
+
+    best = max(sections, key=score, default=None)
+    return best if best and score(best) >= 2 else None
+
+
 def lookup_guidance(state, question):
-    q = [w for w in _norm(question) if w not in STOPWORDS]
-    best, best_score = None, 0
-    for s in guidance_sections():
-        keys = [k.strip() for k in s["keywords"].split(",")]
-        score = sum(2 for k in keys if k and k in " ".join(q) and (" " in k or k in q))
-        score += sum(1 for w in q if w in _norm(s["text"]))
-        if score > best_score:
-            best, best_score = s, score
-    state["timeline"].append({"t": now(), "event": f"lookup_guidance: {question} -> {best['name'] if best and best_score >= 2 else 'no match'}"})
-    if not best or best_score < 2:
-        return {"ok": True, "section": None, "text": NO_MATCH.get(state["language"], NO_MATCH["en"])}
-    return {"ok": True, "section": best["name"], "text": best["text"], "source": best["source"]}
+    sections = guidance_sections()
+    latest = state["family"][-1] if state.get("care_question") and state["family"] else question
+    best = None
+    follow_up = bool(re.fullmatch(CARE_FOLLOW_UP, latest.strip(), re.I))
+    if follow_up:
+        previous = state.get("last_guidance_section")
+        best = next((section for section in sections if section["name"] == previous), None)
+    if re.search(CARE_IMPROVED, latest, re.I):
+        best = next((section for section in sections if section["name"] == "symptoms_go_away"), None)
+    best = best or guidance_match(latest, sections)
+    if not best and question != latest:
+        best = guidance_match(question, sections)
+    if not best and re.search(CARE_WORRY, latest, re.I):
+        best = next((section for section in sections if section["name"] == "while_waiting"), None)
+    name = best["name"] if best else None
+    state["timeline"].append({"t": now(), "event": f"lookup_guidance: {latest} -> {name or 'no match'}"})
+    result = (
+        {"ok": True, "section": name, "text": best["text"], "source": best["source"], "follow_up": follow_up}
+        if best else {"ok": True, "section": None, "text": NO_MATCH[lang(state)]}
+    )
+    state["turn_guidance"] = result
+    if name:
+        state["last_guidance_section"] = name
+    return result
+
+
+def speak_guidance(state, guidance):
+    section = guidance["section"]
+    language = lang(state)
+    index = ("en", "es", "vi").index(language)
+    answers = CARE_ANSWERS.get(section)
+    if section == "while_waiting" and alone(state):
+        answers = CARE_ALONE
+    if section == "do_not_drive" and guidance.get("follow_up"):
+        answers = CARE_DRIVE_REASON
+    text = answers[index] if answers else NO_MATCH[language]
+    last = state["family"][-1] if state["family"] else ""
+    if re.search(CARE_WORRY, last, re.I):
+        text = ("I hear you. ", "Le entiendo. ", "Tôi hiểu. ")[index] + text
+    return _say(state, text, "speak")
 
 
 def notify_contacts(state, update):

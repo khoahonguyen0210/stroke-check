@@ -24,15 +24,15 @@ LANGUAGES = {"en": "English", "es": "Spanish", "vi": "Vietnamese"}
 NO_ANSWER = r"^\(?\s*no answer\s*\)?$"
 PARAMEDICS = r"^\s*paramedics(?: are)? here[.!]?$|\b(?:paramedics|ems|(?:the )?ambulance) (?:are here|is here|(?:have |has )?arrived)\b|\bparamédicos (?:llegaron|están aquí)\b|\bcấp cứu đã (?:đến|tới)\b"
 
-PROMPT_VERSION = "v6"
+PROMPT_VERSION = "v7"
 SYSTEM = """You are the Stroke Check emergency assistant. A stroke warning check just found possible stroke signs. The app has already shown "Call 911 now."
 You talk with the person, or with the helper next to them, until the paramedics arrive. You act only through tools.
 
 Every turn, in this order:
 1. If the last message states a fact, call record_fact (or start_timer for the time) first. Fields someone_present and called_911 are facts too.
-2. If the last message asks a question, call lookup_guidance, then speak the answer using only the returned text.
-3. Say one short, calm sentence with speak(), or ask at most one question with ask(). Then wait.
-   If there was no question, do what STATE.next_step says, in your own short words in {language}.
+2. If the last message asks for help or raises a care concern, call lookup_guidance using the latest concern. Call speak to deliver the grounded answer, then wait.
+3. Otherwise listen to the person's words. Briefly acknowledge what they just told you when it helps, or ask one short clarifying question. Continue with STATE.next_step when a handoff question is pending. Speak naturally in {language}.
+   When the handoff is complete, respond to their latest input. Offer to repeat or clarify the handoff if useful. Avoid repeating a static script or adding new care instructions.
 4. Call finish_turn().
 
 Conversation rules:
@@ -204,7 +204,12 @@ def fallback(state, actions, reason):
     if state["paramedics_here"]:
         line = agent_tools.LINES["follow_paramedics"][agent_tools.lang(state)]
     elif state.get("care_question"):
-        line = agent_tools.NO_MATCH[agent_tools.lang(state)]
+        text = state["family"][-1]
+        guidance = state.get("turn_guidance") or agent_tools.lookup_guidance(state, text)
+        if not any(item["tool"] == "lookup_guidance" for item in actions):
+            act(actions, "lookup_guidance", {"question": text}, guidance, by="code")
+        act(actions, "fixed_script", {"reason": reason}, agent_tools.speak_guidance(state, guidance), by="code")
+        return
     elif not state["said"] and not agent_tools.called_911(state):
         line = script[0] + " " + script[1]
     elif "told_911" not in covered and not agent_tools.called_911(state):
@@ -308,6 +313,7 @@ def run_turn(state, model_name="bolt", reasoning=False, failover=True, initial_a
     said_before = len(state["said"])
     state["turn_said_start"] = said_before
     state["asked_this_turn"] = False
+    state["turn_guidance"] = None
     turn_start = time.time()
     used = model_name
     handoff_turn = state["paramedics_here"] and not state["handoff_written"]
@@ -440,9 +446,12 @@ def reply(text, state, language=None, model_name="bolt", reasoning=False, failov
         state["language"] = language
     text = (text or "").strip()
     actions = []
-    state["care_question"] = text.endswith("?") or bool(re.match(
-        r"^(?:what|where|when|why|how|can (?:i|we)|should (?:i|we)|could (?:i|we)|¿|tôi có nên)\b", text, re.I,
-    ))
+    state["care_question"] = (
+        text.endswith("?") or text.startswith("¿")
+        or bool(re.match(r"^(?:what|where|when|why|how|(?:can|should|could) (?:i|we|they|he|she)|tôi có nên)\b", text, re.I))
+        or bool(re.search(agent_tools.CARE_IMPROVED, text, re.I))
+        or bool(re.search(agent_tools.CARE_WORRY, text, re.I))
+    )
     if re.fullmatch(NO_ANSWER, text.lower()):
         state["no_answer"] = state.get("no_answer", 0) + 1
         state["conversation"].append({"role": "family", "text": "(no answer)"})
