@@ -24,3 +24,6 @@ hf_cache/
 .cache/
 
 logs/
+
+PROMPTS_PERSON_*.md
+devpost.md
