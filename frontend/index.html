@@ -49,10 +49,23 @@
     </section>
     <h2 id="prompt"></h2>
     <button id="done" hidden>Done</button>
+    <details id="benchmark">
+      <summary>Benchmarks</summary>
+      <pre id="benchmark-data" role="status"></pre>
+    </details>
     <section id="result" hidden>
       <h2 id="outcome" role="alert"></h2>
       <p id="retake-reason"></p>
       <div id="signs"></div>
+      <details id="under-hood">
+        <summary>Under the hood</summary>
+        <h3>Raw features</h3>
+        <pre id="features"></pre>
+        <h3>Per-sign model scores</h3>
+        <pre id="scores"></pre>
+        <h3>Latency (ms)</h3>
+        <pre id="latency"></pre>
+      </details>
       <section id="emergency" hidden>
         <h2>Emergency assistant</h2>
         <p id="last-normal">Last known normal time is unknown.</p>

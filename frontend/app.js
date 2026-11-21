@@ -144,6 +144,9 @@ async function postRecording(stream, tasks, collecting) {
 
 function renderResult(result) {
   $("#result").hidden = false
+  $("#features").textContent = JSON.stringify(result.features, null, 2)
+  $("#scores").textContent = JSON.stringify(Object.fromEntries(Object.entries(result.signs).map(([name, sign]) => [name, sign.p])), null, 2)
+  $("#latency").textContent = JSON.stringify(result.latency_ms, null, 2)
   $("#outcome").textContent = {
     warning: "Possible stroke signs. Call 911 now.",
     clear: "No warning signs detected by this check",
@@ -399,4 +402,16 @@ function startAlertCountdown(user, result) {
   }
   const timer = setInterval(tick, 250)
   tick()
+}
+
+
+$("#benchmark").ontoggle = async (event) => {
+  if (!event.target.open) return
+  const output = $("#benchmark-data")
+  output.textContent = "Loading benchmark results…"
+  try {
+    output.textContent = JSON.stringify(await api("/api/benchmarks"), null, 2)
+  } catch (error) {
+    output.textContent = error.message
+  }
 }

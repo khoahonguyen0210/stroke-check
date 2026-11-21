@@ -3,6 +3,7 @@ from pathlib import Path
 from threading import Lock
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
@@ -149,6 +150,14 @@ def send_alert(payload: AlertRequest):
 def test_alert(user: str):
     validate_user(user)
     return {"sent": alerts.test(user)}
+
+
+@app.get("/api/benchmarks")
+def benchmarks():
+    path = ROOT / "models" / "results.json"
+    if not path.is_file():
+        raise HTTPException(404, "Benchmark results are not available yet.")
+    return FileResponse(path, media_type="application/json", headers={"Cache-Control": "no-store"})
 
 
 app.mount("/", StaticFiles(directory=ROOT / "frontend", html=True))

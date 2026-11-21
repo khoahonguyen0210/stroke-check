@@ -11,7 +11,6 @@ def model_input(features, quality):
     return {
         f"{group}.{key}": float(value)
         for group, values in {**features, **{f"{name}_quality": item for name, item in quality.items()}}.items()
-        if group not in {"arms", "arms_quality"}
         for key, value in values.items()
         if isinstance(value, (int, float)) and isfinite(value)
     }
