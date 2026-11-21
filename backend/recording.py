@@ -27,5 +27,9 @@ def analyze(face_json, arms_json, audio=None, webm_path=None, sentence=storage.S
     except (ImportError, OSError, CalledProcessError, ValueError, RuntimeError):
         quality["speech"] = {"ok": False, "reason": "Speech analysis is unavailable or the recording could not be read."}
         features["speech"] = {}
+    speech_model = Path(__file__).resolve().parents[1] / "models" / "speech.joblib"
+    if quality["speech"]["ok"] and not speech_model.is_file():
+        quality["speech"] = {"ok": False, "reason": "The trained speech model is unavailable."}
+        features["speech"] = {}
     latency["speech"] = round((perf_counter() - start) * 1000, 2)
     return features, quality, latency

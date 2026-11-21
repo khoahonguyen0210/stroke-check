@@ -1,4 +1,4 @@
-const version = "0.10.22"
+const version = "0.10.21"
 const video = document.querySelector("video")
 const canvas = document.querySelector("canvas")
 const context = canvas.getContext("2d")
@@ -296,7 +296,7 @@ function updateAgent(response, run) {
 
   const handoff = response.handoff ?? {}
   const facts = handoff.facts ?? {}
-  const known = facts.last_known_normal ?? agentState?.last_known_normal
+  const known = facts.last_known_normal ?? agentState?.timer?.last_known_normal
   const knownAt = typeof known === "string" && /^\d{4}-\d{2}-\d{2}T/.test(known) ? Date.parse(known) : NaN
   clearInterval(lastNormalTimer)
   function timer() {
@@ -312,8 +312,9 @@ function updateAgent(response, run) {
 
   $("#handoff").replaceChildren()
   const entries = { ...handoff.signs, ...facts }
-  if (handoff.time_noticed) entries.time_noticed = handoff.time_noticed
+  if (handoff.check_time) entries.check_time = handoff.check_time
   for (const [key, value] of Object.entries(entries)) {
+    if (value == null) continue
     const label = document.createElement("dt")
     label.textContent = key.replaceAll("_", " ")
     const detail = document.createElement("dd")
@@ -326,7 +327,7 @@ function updateAgent(response, run) {
   }
   for (const action of response.actions ?? []) {
     const item = document.createElement("li")
-    item.textContent = `${action.tool ?? action.name ?? "Action"} ${action.args ? JSON.stringify(action.args) : ""}`
+    item.textContent = (action.tool ?? action.name ?? "Action").replaceAll("_", " ")
     $("#agent-actions").append(item)
   }
 }
@@ -392,7 +393,7 @@ function startAlertCountdown(user, result) {
     cancel.hidden = true
     output.textContent = "Sending alerts…"
     try {
-      const { sent } = await api("/api/alert", { user, result, detected_at: detectedAt, location })
+      const { sent } = await api("/api/alert", { user, result, detected_at: detectedAt, location, session: agentState?.session })
       output.textContent = `${new Date().toLocaleTimeString()} · ${deliverySummary(sent)}`
     } catch (error) {
       output.textContent = `Alerts could not be sent. ${error.message}`

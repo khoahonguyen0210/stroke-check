@@ -2,6 +2,7 @@ import json
 import os
 import smtplib
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import ContextVar
 from datetime import datetime
 from email.message import EmailMessage
 from threading import Lock
@@ -13,6 +14,7 @@ from backend import storage
 
 DISCLAIMER = "This is an automated warning, not a diagnosis."
 LOCK = Lock()
+FOLLOWUP_ALLOWED = ContextVar("followup_allowed", default=True)
 
 
 def deliver(user, subject, text):
@@ -66,6 +68,8 @@ def send(user, result, detected_at, location=None):
 
 
 def notify(user, text):
+    if not FOLLOWUP_ALLOWED.get():
+        return []
     return deliver(user, "Stroke Check update", f"{text}\nFollow the 911 dispatcher's instructions. {DISCLAIMER}")
 
 

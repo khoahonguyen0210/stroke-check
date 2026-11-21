@@ -1,4 +1,6 @@
 import json
+import re
+from copy import deepcopy
 from pathlib import Path
 from threading import Lock
 
@@ -40,7 +42,7 @@ async def collect(meta: str = Form(), face: str = Form(), arms: str = Form(), au
         path = storage.save_session(json.loads(meta), json.loads(face), json.loads(arms), await audio.read(), label)
     except (KeyError, TypeError, ValueError) as error:
         raise HTTPException(422, "Invalid session data.") from error
-    return {"path": str(path.relative_to(ROOT))}
+    return {"path": (Path("data") / path.relative_to(storage.DATA)).as_posix()}
 
 
 @app.post("/api/baseline/{user}")
@@ -48,10 +50,13 @@ async def baseline(user: str, meta: str = Form(), face: str = Form(), arms: str 
     return {"saved": False}
 
 
-HANDOFFS = {}
+AGENT_SESSIONS = {}
+ALERTED_SESSIONS = set()
 
 
 def agent_response(operation, *args):
+    session = str(args[1].get("session", "")) if operation == "reply" else ""
+    token = alerts.FOLLOWUP_ALLOWED.set(session in ALERTED_SESSIONS)
     try:
         from backend import agent
 
@@ -59,9 +64,11 @@ def agent_response(operation, *args):
     except (ImportError, AttributeError):
         state = args[1] if operation == "reply" else {}
         response = {"say": "Call 911 now and follow the dispatcher's instructions.", "actions": [], "handoff": {}, "state": state}
+    finally:
+        alerts.FOLLOWUP_ALLOWED.reset(token)
     session = response["state"].get("session")
     if session is not None:
-        HANDOFFS[str(session)] = response["handoff"]
+        AGENT_SESSIONS[str(session)] = (deepcopy(response["state"]), response["handoff"])
     return response
 
 
@@ -76,16 +83,26 @@ def agent_start(payload: dict):
 def agent_message(payload: dict):
     if not isinstance(payload.get("state"), dict) or not isinstance(payload.get("text"), str):
         raise HTTPException(422, "Message and agent state are required.")
-    return agent_response("reply", payload["text"], payload["state"], payload.get("language", "en"))
+    session = str(payload["state"].get("session", ""))
+    if session not in AGENT_SESSIONS:
+        raise HTTPException(404, "Assistant session has expired.")
+    state, _ = AGENT_SESSIONS[session]
+    return agent_response("reply", payload["text"], deepcopy(state), payload.get("language", "en"))
 
 
 @app.get("/api/agent/handoff/{session}")
 def handoff(session: str):
     from fastapi.responses import PlainTextResponse
 
-    if session not in HANDOFFS:
+    if session not in AGENT_SESSIONS:
+        if re.fullmatch(r"[0-9]{8}-[0-9]{6}", session):
+            path = storage.DATA / "handoffs" / f"{session}.txt"
+            if path.is_file():
+                return PlainTextResponse(path.read_text())
         raise HTTPException(404, "Handoff not found.")
-    details = HANDOFFS[session]
+    _, details = AGENT_SESSIONS[session]
+    if details.get("timeline") and details.get("text"):
+        return PlainTextResponse(details["text"])
     facts = details.get("facts", {})
     signs = details.get("signs", {})
     lines = ["Stroke Check paramedic handoff"]
@@ -112,6 +129,7 @@ class AlertRequest(BaseModel):
     result: dict
     detected_at: str
     location: dict | None = None
+    session: str | None = None
 
 
 def validate_user(user):
@@ -143,7 +161,11 @@ def post_contacts(user: str, payload: Contact):
 @app.post("/api/alert")
 def send_alert(payload: AlertRequest):
     validate_user(payload.user)
-    return {"sent": alerts.send(payload.user, payload.result, payload.detected_at, payload.location)}
+    sent = alerts.send(payload.user, payload.result, payload.detected_at, payload.location)
+    session = AGENT_SESSIONS.get(payload.session)
+    if session and session[0].get("user") == payload.user and any(item["ok"] for item in sent):
+        ALERTED_SESSIONS.add(payload.session)
+    return {"sent": sent}
 
 
 @app.post("/api/alert/test/{user}")
