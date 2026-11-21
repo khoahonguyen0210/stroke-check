@@ -152,8 +152,16 @@ Style: clean and readable first; light retro touches (pixel font for headings, h
   ```
 - `POST /api/collect` same fields + `label` → saves a session, returns its path.
 - `POST /api/baseline/{user}` same fields → adds a normal session to that user's baseline.
-- `POST /api/agent/start` `{result, language}` → `{say, actions, handoff, state}`
-- `POST /api/agent/message` `{text, state, language}` → `{say, actions, handoff, state}`
+- `POST /api/agent/start` `{result, language}` → agent response (below). `result` may include `name` and `location` (`{lat, lon}`, only if shared).
+- `POST /api/agent/message` `{text, state, language}` → agent response. `text` is the family's words, `"(no answer)"` after 20 s of silence, or `"paramedics are here"` from the button.
+- Agent response:
+  ```json
+  {"say": "...", "actions": [], "handoff": {}, "state": {},
+   "model": "nvidia/nemotron-3.5-bolt-e4b",
+   "steps": [{"tool": "ask", "args": {}, "result": "...", "ms": 420, "reasoning": false, "by": "model", "model": "...", "blocked_by_safety": false, "replaced_with": null}],
+   "verified": true, "removed_facts": [{"field": "allergies", "value": "...", "reason": "no supporting line"}], "script_911": "..."}
+  ```
+  `model` is the model that answered this turn (Bolt, or Super if Bolt was rate limited). `steps` has one entry per tool call; `by` is `model` or `code` (rules the code enforces). `verified` is `null` until the handoff is written, then `true` (checked by Super) or `false` (Super failed or took over 8 s). `script_911` is `null` until `last_known_normal` is known.
 - `GET /api/agent/handoff/{session}` → printable paramedic handoff text
 - `GET /api/contacts/{user}` → list of contacts
 - `POST /api/contacts/{user}` `{name, relationship, email, phone?, consent: true}` → saved list (reject if consent is false)
@@ -195,23 +203,34 @@ Style: clean and readable first; light retro touches (pixel font for headings, h
 
 ### Emergency agent (`agent.py`, `agent_tools.py`, `safety.py`, `guidance.md`) — powered by Nemotron
 The agent does real work between the 911 call and the ambulance: it coaches the family, collects the facts paramedics need, keeps trusted contacts updated, and writes the handoff.
-- Model: Nemotron 3.5 Bolt E4B (compact, built for tool calling, small enough to run on a laptop later, which keeps health data on-device). Uses OpenAI-style tool calling.
-- Loop: send the check result (signs, probabilities, features), the handoff so far and the conversation; run the tool calls the model makes; repeat until it calls `finish_turn` or after 6 steps.
+- Model: Nemotron 3.5 Bolt E4B (`nvidia/nemotron-3.5-bolt-e4b`; compact, built for tool calling, small enough to run on a laptop later, which keeps health data on-device). Uses OpenAI-style tool calling with `tool_choice="required"`. If Bolt returns a rate-limit or server error, that turn switches to Nemotron 3.5 Super (`nvidia/nemotron-3.5-super-vl-120b-a12b`; Nemotron 3 Super is not offered on build.nvidia.com) and the response's `model` says so.
+- Loop: send the check result, the facts so far, the conversation as one transcript, and a `next_step` computed in code; run the tool calls the model makes; repeat until it calls `finish_turn`, asks a question, or after 6 steps.
+- Conversation rules (prompt + code):
+  - Each turn: one short calm sentence and at most one question, then wait (code rejects a second question or a sentence after the question).
+  - First question: "Is someone with you right now?" → `someone_present`.
+  - Alone: tell them to call 911 now, say their contacts are being alerted, tell them to unlock the door and sit or lie down somewhere safe, then ask the handoff questions as simple yes/no questions. Someone present: talk to the helper.
+  - `called_911` is tracked; until it is yes, code adds "Call 911 now" to every turn.
+  - `"(no answer)"`: ask once more; on the second, code says help is on the way and calls `notify_contacts`.
+  - `"paramedics are here"`: code calls `write_handoff`, runs the Super check, and reads a short summary out loud (the family's own words).
+  - Short or unclear answers: ask again instead of guessing.
 - Tools (`agent_tools.py`, plain functions):
   - `speak(text)`: one short, calm sentence for the family.
-  - `ask(field, question)`: ask for one handoff fact. Fields: `last_known_normal`, `blood_thinners`, `recent_fall_or_head_injury`, `diabetes`, `seizure`, `current_medications`, `allergies`.
-  - `record_fact(field, value)`: save what the family said, word for word. Never infer a value they didn't give.
+  - `ask(field, question)`: ask for one fact. Fields: `someone_present`, `called_911`, `last_known_normal`, `blood_thinners`, `recent_fall_or_head_injury`, `diabetes`, `seizure`, `current_medications`, `allergies`.
+  - `record_fact(field, value)`: save what the family said, word for word. Rejected unless the value appears in a family message.
   - `start_timer(last_known_normal)`: start or correct the timer.
-  - `lookup_guidance(question)`: return the best matching section of `guidance.md` (keyword or small embedding match). The agent may answer family questions only from returned text; if nothing matches, it says "Ask the 911 dispatcher."
-  - `notify_contacts(update)`: short follow-up to trusted contacts (e.g. "911 has been called"); `alerts.py` sends it and adds the standard disclaimer.
+  - `lookup_guidance(question)`: return the best matching section of `guidance.md` (keyword match). The agent may answer family questions only from returned text; if nothing matches, it says "Ask the 911 dispatcher."
+  - `notify_contacts(update)`: short follow-up to trusted contacts (e.g. "911 has been called"); `alerts.py` sends it and adds the standard disclaimer. Each update is sent once.
+  - `write_911_script()`: 3–4 short sentences the caller reads to the dispatcher (who, which signs, when they started, blood thinners if known, location if shared), built in code from recorded facts only. Returned as `script_911` and refreshed when those facts change.
   - `write_handoff()`: build the paramedic handoff (time noticed, signs with probabilities, every recorded fact, timeline of actions) as JSON plus plain text.
   - `finish_turn()`.
+- Two-model handoff check: after `write_handoff`, the handoff facts and the numbered family lines go to Nemotron Super with reasoning on. For each fact it returns the supporting line number; code keeps a fact only if that line really contains the value. Unsupported facts are removed and listed in `removed_facts`; `verified: true`. Over 8 s or an error → keep the Bolt handoff, `verified: false`.
+- Every model call has a hard deadline (a stuck connection cannot hold a turn).
 - `guidance.md`: short sections the team writes from public American Stroke Association / CDC BE FAST guidance (what to do while waiting, why not to drive yourself, no aspirin or food or drink, unlock the door, gather medication list). Credit the sources in README.md.
 - Safety layer in code, not the model:
   - The first "Call 911 now" message is fixed text shown before the agent runs.
   - Every `speak` and `notify_contacts` text goes through `safety.check`: block "you're fine", "not a stroke", "wait and see", any medicine or dose advice, and any diagnosis. If blocked, use the matching fixed-script line and log it in `actions`.
   - Timeout over 6 s or API error → fixed script with the same steps. The app never waits on the model to show 911 instructions.
-- Reasoning: if the model card offers a reasoning on/off switch, use it off for `speak` turns (speed) and on for `write_handoff` (accuracy); measure both in the eval.
+- Reasoning (`chat_template_kwargs.enable_thinking`): off for conversation turns (speed), on for the Super handoff check (accuracy); measure both in the eval.
 - Replies in the user's chosen language.
 
 ### Agent evaluation (`training/eval_agent.py`, `training/agent_scenarios.json`)
