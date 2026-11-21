@@ -274,7 +274,7 @@ let contactsUser
 function showContacts(contacts) {
   $("#contact-list").replaceChildren(...contacts.map((contact) => {
     const item = document.createElement("li")
-    item.textContent = `${contact.name} (${contact.relationship}) · ${contact.email}`
+    item.textContent = `${contact.name} (${contact.relationship}) · ${contact.email}${contact.phone ? ` · ${contact.phone}` : ""}`
     return item
   }))
 }
@@ -300,6 +300,7 @@ $("#contact-form").onsubmit = async (event) => {
   event.preventDefault()
   const payload = Object.fromEntries(new FormData(event.target))
   payload.consent = payload.consent === "on"
+  payload.phone = payload.phone.trim() || null
   try {
     showContacts(await api(`/api/contacts/${contactsUser}`, payload))
     event.target.reset()
@@ -724,7 +725,7 @@ async function startEmergency(result) {
   const user = $("#name").value.trim()
   const [location, created] = await Promise.all([
     getLocation(),
-    api("/api/incident", { user, name: user, phone: $("#phone").value.trim() || null, result }).catch(() => null),
+    api("/api/incident", { user, name: user, result }).catch(() => null),
   ])
   if (run !== emergencyRun) return
   incidentId = created?.id
