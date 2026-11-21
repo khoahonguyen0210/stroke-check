@@ -89,6 +89,7 @@ async function createTasks() {
 }
 
 const xyz = ({ x, y, z }) => [x, y, z]
+const INSTRUCTION_TIME_MS = 5000
 
 function capture(duration, message, read) {
   const frames = []
@@ -96,6 +97,7 @@ function capture(duration, message, read) {
   $("#prompt").textContent = message
   $("#capture-progress").max = duration
   $("#capture-progress").value = 0
+  $("#countdown").textContent = `${Math.ceil(duration / 1000)}s`
   let lastVideoTime = -1
   return new Promise((resolve, reject) => {
     function frame(now) {
@@ -108,7 +110,7 @@ function capture(duration, message, read) {
         const remaining = `${Math.ceil((duration - elapsed) / 1000)}s`
         if ($("#countdown").textContent !== remaining) $("#countdown").textContent = remaining
         $("#capture-progress").value = elapsed
-        if (lastVideoTime !== video.currentTime) {
+        if (read && lastVideoTime !== video.currentTime) {
           lastVideoTime = video.currentTime
           frames.push({ t: Math.max(0, elapsed / 1000), ...read(now) })
         }
@@ -125,6 +127,8 @@ function capture(duration, message, read) {
 async function postRecording(stream, tasks) {
   const face = []
   $("#capture-step").textContent = "Step 1 of 2 · Face"
+  $("#capture-hint").textContent = "Face the camera. You’ll relax your face, smile, then raise your eyebrows."
+  await capture(INSTRUCTION_TIME_MS, "Get ready for the face check")
   $("#capture-hint").textContent = "Keep your head still and face the camera."
   const phases = [["relax", "Relax your face"], ["smile", "Smile big"], ["brows", "Raise your eyebrows"]]
   resetFace()
@@ -136,8 +140,10 @@ async function postRecording(stream, tasks) {
     }).then((frames) => frames.map((frame) => ({ ...frame, t: frame.t + index * 3 }))))
   }
   $("#capture-step").textContent = "Step 2 of 2 · Arms"
-  $("#capture-hint").textContent = "Keep both wrists in view, with your arms straight out in front at shoulder height."
+  $("#capture-hint").textContent = "You’ll extend both arms in front of you at shoulder height, palms up. Keep both wrists in the camera view."
   hideFace()
+  context.clearRect(0, 0, canvas.width, canvas.height)
+  await capture(INSTRUCTION_TIME_MS, "Get ready for the arm check")
   resetArms()
   const readPose = (holding) => (now) => {
     const pose = tasks.pose.detectForVideo(video, now).landmarks[0] ?? []
@@ -145,6 +151,7 @@ async function postRecording(stream, tasks) {
     return { pose: pose.map((point) => [...xyz(point), point.visibility]), hands: [] }
   }
   await capture(3000, "Raise both arms, palms up", readPose(false))
+  $("#capture-hint").textContent = "Keep both wrists in view for the whole hold."
   const arms = await capture(10000, "Hold both arms steady", readPose(true))
   hideArms()
   stream.getTracks().forEach((track) => track.stop())
