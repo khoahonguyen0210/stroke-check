@@ -137,7 +137,10 @@ async function postRecording(stream, tasks, collecting) {
   data.set("arms", new Blob([JSON.stringify({ fps: arms.length / 10, frames: arms })], { type: "application/json" }), "arms.json")
   data.set("audio", audio, "speech.webm")
   if (collecting) data.set("label", $("#label").value)
-  else if ($("#gemini-consent").checked) data.set("gemini_consent", "true")
+  else {
+    if ($("#gemini-consent").checked) data.set("gemini_consent", "true")
+    if ($("#gemini-demo").checked) data.set("gemini_demo", "true")
+  }
   const response = await fetch(collecting ? "/api/collect" : "/api/check", { method: "POST", body: data })
   const result = await response.json().catch(() => null)
   if (!response.ok || !result) {
@@ -148,17 +151,23 @@ async function postRecording(stream, tasks, collecting) {
 }
 
 function renderResult(result) {
+  const geminiDemo = result.overall === "gemini_demo"
+  const review = result.gemini_review
   $("#result").hidden = false
   $("#features").textContent = JSON.stringify(result.features, null, 2)
-  $("#scores").textContent = JSON.stringify(Object.fromEntries(Object.entries(result.signs).map(([name, sign]) => [name, sign.p])), null, 2)
+  $("#scores").textContent = JSON.stringify(geminiDemo ? review.signs ?? {} : Object.fromEntries(Object.entries(result.signs).map(([name, sign]) => [name, sign.p])), null, 2)
   $("#latency").textContent = JSON.stringify(result.latency_ms, null, 2)
   $("#outcome").textContent = {
     warning: "Possible stroke signs. Call 911 now.",
     clear: "No warning signs detected by this check",
     retake: "Recording needs a retake",
+    gemini_demo: "Gemini demo result",
   }[result.overall]
   $("#retake-reason").textContent = result.retake_reason ?? ""
-  $("#retake").hidden = result.overall !== "retake"
+  const incomplete = geminiDemo && (
+    review.status !== "reviewed" || Object.values(review.signs).includes("insufficient_evidence")
+  )
+  $("#retake").hidden = result.overall !== "retake" && !incomplete
   $("#signs").replaceChildren(...Object.entries(result.signs).map(([name, sign]) => {
     const card = document.createElement("article")
     card.className = sign.flag ? "flagged" : "sign"
@@ -170,7 +179,7 @@ function renderResult(result) {
     card.append(title, detail)
     return card
   }))
-  const review = result.gemini_review
+  $("#gemini-heading").textContent = geminiDemo ? "Per-sign ratings" : "Gemini second review"
   $("#gemini-review").hidden = !review
   $("#gemini-signs").replaceChildren()
   if (review) {
@@ -181,8 +190,8 @@ function renderResult(result) {
       sign_not_observed: "Sign not observed in this review",
     }
     $("#gemini-summary").textContent = review.status === "reviewed"
-      ? "Experimental observations. The recording still needs a retake."
-      : "Gemini review is unavailable."
+      ? (geminiDemo ? "Experimental ratings from this recording." : "Experimental observations. The recording still needs a retake.")
+      : (review.status === "poor_quality" ? "Recording quality was too low for a review." : "Gemini review is unavailable.")
     for (const [name, observation] of Object.entries(review.signs ?? {})) {
       const item = document.createElement("li")
       item.textContent = `${labels[name]} · ${observations[observation]}`
@@ -199,10 +208,15 @@ $("#setup").onsubmit = async (event) => {
     $("#alert-status").focus()
     return
   }
+  const collecting = $("#collect").checked
+  if (!collecting && $("#gemini-demo").checked && !$("#gemini-consent").checked) {
+    status.textContent = "Allow Google Gemini to receive the speech audio and measurements before starting the Gemini-only demo."
+    $("#gemini-consent").focus()
+    return
+  }
   resetEmergency()
   $("#result").hidden = true
   let stream
-  const collecting = $("#collect").checked
   const inputs = [...$("#setup").elements]
   inputs.forEach((input) => { input.disabled = true })
   status.textContent = "Loading camera and models…"

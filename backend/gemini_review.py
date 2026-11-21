@@ -22,25 +22,24 @@ def review(features, audio):
     if not key:
         return {"status": "unavailable"}
     try:
-        pcm = subprocess.run(
-            ["ffmpeg", "-loglevel", "error", "-i", "pipe:0", "-t", "8", "-ac", "1", "-ar", "16000", "-f", "s16le", "pipe:1"],
-            input=audio, capture_output=True, check=True, timeout=3,
-        ).stdout
-        buffer = BytesIO()
-        with wave.open(buffer, "wb") as wav:
-            wav.setparams((1, 2, 16000, 0, "NONE", "not compressed"))
-            wav.writeframes(pcm)
         measurements = fusion.model_input(features, {})
-        parts = [
-            {"text": (
-                "Review these measurements and spoken audio from a stroke-check demo for observable signs. "
-                "For face, assess one-sided smile weakness. For arms, assess one-sided downward drift. "
-                "For speech, review articulation in the audio. A transcription mismatch alone is insufficient. "
-                "Use insufficient_evidence whenever the evidence is ambiguous. Return only the specified categories. "
-                f"The expected sentence is {storage.SENTENCE}\nMeasurements: {json.dumps(measurements)}"
-            )},
-            {"inlineData": {"mimeType": "audio/wav", "data": base64.b64encode(buffer.getvalue()).decode("ascii")}},
-        ]
+        parts = [{"text": (
+            "Review the available measurements and audio from a stroke-check demo for observable signs. "
+            "For face, assess one-sided smile weakness. For arms, assess one-sided downward drift. "
+            "For speech, review articulation only if audio is supplied. A transcription mismatch alone is insufficient. "
+            "Use insufficient_evidence whenever input for a sign is absent or ambiguous. Return only the specified categories. "
+            f"The expected sentence is {storage.SENTENCE}\nMeasurements: {json.dumps(measurements)}"
+        )}]
+        if audio:
+            pcm = subprocess.run(
+                ["ffmpeg", "-loglevel", "error", "-i", "pipe:0", "-t", "8", "-ac", "1", "-ar", "16000", "-f", "s16le", "pipe:1"],
+                input=audio, capture_output=True, check=True, timeout=3,
+            ).stdout
+            buffer = BytesIO()
+            with wave.open(buffer, "wb") as wav:
+                wav.setparams((1, 2, 16000, 0, "NONE", "not compressed"))
+                wav.writeframes(pcm)
+            parts.append({"inlineData": {"mimeType": "audio/wav", "data": base64.b64encode(buffer.getvalue()).decode("ascii")}})
         schema = {
             "type": "object",
             "properties": {name: {"type": "string", "enum": list(STATES)} for name in fusion.NAMES},
