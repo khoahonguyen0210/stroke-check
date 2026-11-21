@@ -30,6 +30,7 @@
         <label><input id="glasses" type="checkbox"> Glasses</label>
       </fieldset>
       <label><input id="share-location" type="checkbox"> Share location with trusted contacts if alerted</label>
+      <label><input id="gemini-consent" type="checkbox"> Allow Google Gemini to review speech audio and measurements if scores are uncertain</label>
       <button id="start">Start check</button>
       <button id="contacts-open" type="button">Trusted contacts</button>
     </form>
@@ -58,6 +59,11 @@
       <h2 id="outcome" role="alert"></h2>
       <p>This is a warning tool, not a diagnosis. If you suspect a stroke, call 911 now.</p>
       <p id="retake-reason"></p>
+      <section id="gemini-review" hidden>
+        <h3>Gemini second review</h3>
+        <p id="gemini-summary"></p>
+        <ul id="gemini-signs"></ul>
+      </section>
       <div id="signs"></div>
       <details id="under-hood">
         <summary>Under the hood</summary>

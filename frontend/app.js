@@ -135,6 +135,7 @@ async function postRecording(stream, tasks, collecting) {
   data.set("arms", new Blob([JSON.stringify({ fps: arms.length / 10, frames: arms })], { type: "application/json" }), "arms.json")
   data.set("audio", audio, "speech.webm")
   if (collecting) data.set("label", $("#label").value)
+  else if ($("#gemini-consent").checked) data.set("gemini_consent", "true")
   const response = await fetch(collecting ? "/api/collect" : "/api/check", { method: "POST", body: data })
   const result = await response.json().catch(() => null)
   if (!response.ok || !result) {
@@ -166,6 +167,25 @@ function renderResult(result) {
     card.append(title, detail)
     return card
   }))
+  const review = result.gemini_review
+  $("#gemini-review").hidden = !review
+  $("#gemini-signs").replaceChildren()
+  if (review) {
+    const labels = { face: "Face droop", arms: "Arm drift", speech: "Slurred speech" }
+    const observations = {
+      possible_sign: "Possible sign. If you suspect a stroke, call 911 now.",
+      insufficient_evidence: "Insufficient evidence",
+      sign_not_observed: "Sign not observed in this review",
+    }
+    $("#gemini-summary").textContent = review.status === "reviewed"
+      ? "Experimental observations. The recording still needs a retake."
+      : "Gemini review is unavailable."
+    for (const [name, observation] of Object.entries(review.signs ?? {})) {
+      const item = document.createElement("li")
+      item.textContent = `${labels[name]} · ${observations[observation]}`
+      $("#gemini-signs").append(item)
+    }
+  }
   if (result.overall === "warning") startEmergency(result)
 }
 

@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
-from backend import alerts, fusion, recording, storage
+from backend import alerts, fusion, gemini_review, recording, storage
 from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,7 +26,10 @@ async def read_landmarks(part: UploadFile | str):
 
 
 @app.post("/api/check")
-async def check(meta: str = Form(), face: UploadFile | str = File(), arms: UploadFile | str = File(), audio: UploadFile = File()):
+async def check(
+    meta: str = Form(), face: UploadFile | str = File(), arms: UploadFile | str = File(),
+    audio: UploadFile = File(), gemini_consent: bool = Form(False),
+):
     try:
         face_data, arms_data = await read_landmarks(face), await read_landmarks(arms)
         if not isinstance(face_data, dict) or not isinstance(arms_data, dict):
@@ -37,6 +40,8 @@ async def check(meta: str = Form(), face: UploadFile | str = File(), arms: Uploa
         raise HTTPException(422, "Invalid recording.") from error
     result = await run_in_threadpool(fusion.predict, features, quality)
     result["latency_ms"] = latency
+    if gemini_consent and result["overall"] == "retake" and all(item["ok"] for item in quality.values()):
+        result["gemini_review"] = await run_in_threadpool(gemini_review.review, features, content)
     return result
 
 
