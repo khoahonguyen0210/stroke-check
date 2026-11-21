@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Stroke Check</title>
   <link rel="stylesheet" href="/style.css">
+  <script type="importmap">
+    {"imports": {"three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
+  </script>
 </head>
 <body>
   <main>
@@ -77,6 +80,20 @@
       <p>This is a warning tool, not a diagnosis. If you suspect a stroke, call 911 now.</p>
       <p id="retake-reason"></p>
       <div id="signs"></div>
+      <div id="explain-card" hidden>
+        <span class="explain-badge" id="explain-badge">Explained by Nemotron</span>
+        <p id="explain-text"></p>
+      </div>
+      <div id="viz-result" hidden>
+        <figure id="face3d-box" hidden>
+          <div id="face3d"></div>
+          <figcaption><strong id="face3d-label"></strong><span>Your face mesh from landmarks only (no video kept). Red = left and right sides moved differently. Smile movement shown 2× so it's easier to see. Drag to rotate.</span><button id="face3d-play" type="button">Pause smile</button></figcaption>
+        </figure>
+        <figure id="arms-chart-box" hidden>
+          <canvas id="arms-chart" aria-label="Wrist height during the hold"></canvas>
+          <figcaption><span class="legend-left">Left wrist</span> <span class="legend-right">Right wrist</span> · drop from the starting height during the 10 s hold, in shoulder-widths</figcaption>
+        </figure>
+      </div>
       <section id="emergency" hidden>
         <div class="alert-delivery">
           <div><h2>Trusted contact emails</h2><p id="alert-status" role="status" tabindex="-1"></p></div>

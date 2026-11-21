@@ -61,3 +61,25 @@ def features(recording):
     output["drop_difference"] = output["left_drop"] - output["right_drop"]
     output["rotation_difference"] = output["left_rotation"] - output["right_rotation"]
     return output
+
+
+def trace(recording):
+    rows = []
+    for frame in recording.get("frames", []):
+        if not visible(frame):
+            continue
+        pose = np.asarray(frame["pose"])[:, :3]
+        scale = np.linalg.norm(pose[11] - pose[12])
+        if scale < 0.01:
+            continue
+        rows.append((frame["t"], (pose[15][1] - pose[11][1]) / scale, (pose[16][1] - pose[12][1]) / scale))
+    if len(rows) < 2:
+        return {}
+    step = max(1, len(rows) // 150)
+    rows = rows[::step]
+    t0 = rows[0][0]
+    return {
+        "t": [round(r[0] - t0, 2) for r in rows],
+        "left": [round(float(r[1] - rows[0][1]), 4) for r in rows],
+        "right": [round(float(r[2] - rows[0][2]), 4) for r in rows],
+    }

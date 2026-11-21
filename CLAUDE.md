@@ -150,6 +150,8 @@ Style: clean and readable first; light retro touches (pixel font for headings, h
    "signs": {"face": {"flag": true, "p": 0.81}, "arms": {"flag": false, "p": 0.12}, "speech": {"flag": true, "p": 0.74}},
    "features": {...}, "latency_ms": {...}}
   ```
+- `/api/check` also returns `explain: {face_overlay, arms_trace}` (`face.overlay`: neutral and peak-smile landmarks, per-landmark asymmetry, per-side lifts; `arms.trace`: wrist drop over the hold) for the result-screen visuals.
+- `POST /api/explain` `{result}` → `{text, grounded, model}` from `explain.write` (Nemotron Bolt, reasoning off, 4 s limit, numbers checked against the features, safety-checked; template otherwise). Called after the result is shown so it never delays the 911 instructions.
 - `POST /api/collect` same fields + `label` → saves a session, returns its path.
 - `POST /api/baseline/{user}` same fields → adds a normal session to that user's baseline.
 - `POST /api/agent/start` `{result, language}` → agent response (below). `result` may include `name` and `location` (`{lat, lon}`, only if shared).

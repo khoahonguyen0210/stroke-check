@@ -81,6 +81,10 @@ Everything in this repository was written during tidalBYTE '26. Outside sources:
 - NHS, "Symptoms of a stroke": https://www.nhs.uk/conditions/stroke/symptoms/
 - The "food, drink and medicine" and "while you wait" sections are our team's safety rules, marked as such in the file.
 
+**Visuals**
+- Three.js 0.160 (loaded from jsDelivr) for the 3D asymmetry face.
+- MediaPipe Face Landmarker tessellation (`FACE_LANDMARKS_TESSELATION`) and Pose Landmarker for the live face and arm overlays.
+
 **Maps (family live view)**
 - MapLibre GL JS (loaded from unpkg) for the map.
 - OpenFreeMap map styles and tiles (`liberty` and `dark`): https://openfreemap.org

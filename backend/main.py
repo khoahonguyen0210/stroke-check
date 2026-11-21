@@ -38,7 +38,33 @@ async def check(meta: str = Form(), face: UploadFile | str = File(), arms: Uploa
         raise HTTPException(422, "Invalid recording.") from error
     result = fusion.predict_vision(features, quality)
     result["latency_ms"] = latency
+    result["explain"] = await run_in_threadpool(visuals, face_data, arms_data)
     return result
+
+
+def visuals(face_data, arms_data):
+    from backend import arms, face
+
+    out = {"face_overlay": {}, "arms_trace": {}}
+    try:
+        out["face_overlay"] = face.overlay(face_data)
+    except (ValueError, TypeError, KeyError, IndexError):
+        pass
+    try:
+        out["arms_trace"] = arms.trace(arms_data)
+    except (ValueError, TypeError, KeyError, IndexError):
+        pass
+    return out
+
+
+@app.post("/api/explain")
+def explain_result(payload: dict):
+    from backend import explain
+
+    result = payload.get("result")
+    if not isinstance(result, dict) or not isinstance(result.get("features"), dict):
+        raise HTTPException(422, "Check result is required.")
+    return explain.write(result, result["features"])
 
 
 @app.post("/api/collect")

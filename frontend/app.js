@@ -1,3 +1,6 @@
+import { drawFace as drawLiveFace, getTessellation, hideFace, resetFace, setTessellation, videoAspect } from "./viz_live.js"
+import { chart as drawArmsChart, drawArms as drawLiveArms, hideArms, resetArms } from "./viz_arms.js"
+
 const version = "0.10.21"
 const video = document.querySelector("video")
 const canvas = document.querySelector("canvas")
@@ -17,20 +20,13 @@ async function createFace({ vision, files }) {
   })
 }
 
-function drawFace(points) {
-  canvas.width = video.videoWidth
-  canvas.height = video.videoHeight
-  context.fillStyle = "#40ff90"
-  for (const point of points) {
-    context.fillRect(point.x * canvas.width, point.y * canvas.height, 2, 2)
-  }
-}
 
 const $ = (selector) => document.querySelector(selector)
 let visionTasks
 
 async function createTasks() {
   const { vision, files } = await loadVision()
+  setTessellation(vision.FaceLandmarker.FACE_LANDMARKS_TESSELATION)
   const root = "https://storage.googleapis.com/mediapipe-models"
   const options = (path) => ({ runningMode: "VIDEO", baseOptions: { modelAssetPath: root + path } })
   return {
@@ -72,48 +68,32 @@ function capture(duration, message, read) {
   })
 }
 
-function drawArms(points) {
-  canvas.width = video.videoWidth
-  canvas.height = video.videoHeight
-  context.strokeStyle = "#63f0d9"
-  context.fillStyle = context.strokeStyle
-  context.lineWidth = 4
-  for (const arm of [[11, 13, 15], [12, 14, 16]]) {
-    const joints = arm.map((index) => points[index])
-    if (joints.some((point) => !point || point.visibility < 0.5)) continue
-    context.beginPath()
-    context.moveTo(joints[0].x * canvas.width, joints[0].y * canvas.height)
-    for (const point of joints.slice(1)) context.lineTo(point.x * canvas.width, point.y * canvas.height)
-    context.stroke()
-    for (const point of joints) {
-      context.beginPath()
-      context.arc(point.x * canvas.width, point.y * canvas.height, 5, 0, Math.PI * 2)
-      context.fill()
-    }
-  }
-}
 
 async function postRecording(stream, tasks, collecting) {
   const face = []
   $("#capture-step").textContent = "Step 1 of 2 · Face"
   $("#capture-hint").textContent = "Keep your head still and face the camera."
   const phases = [["relax", "Relax your face"], ["smile", "Smile big"], ["brows", "Raise your eyebrows"]]
+  resetFace()
   for (const [index, [phase, message]] of phases.entries()) {
     face.push(...await capture(3000, message, (now) => {
       const points = tasks.face.detectForVideo(video, now).faceLandmarks[0] ?? []
-      drawFace(points)
+      drawLiveFace(canvas, context, video, points, phase)
       return { phase, landmarks: points.map(xyz) }
     }).then((frames) => frames.map((frame) => ({ ...frame, t: frame.t + index * 3 }))))
   }
   $("#capture-step").textContent = "Step 2 of 2 · Arms"
   $("#capture-hint").textContent = "Keep both wrists in view, with your arms straight out in front at shoulder height."
-  function readPose(now) {
+  hideFace()
+  resetArms()
+  const readPose = (holding) => (now) => {
     const pose = tasks.pose.detectForVideo(video, now).landmarks[0] ?? []
-    drawArms(pose)
+    drawLiveArms(canvas, context, video, pose, holding)
     return { pose: pose.map((point) => [...xyz(point), point.visibility]), hands: [] }
   }
-  await capture(3000, "Raise both arms, palms up", readPose)
-  const arms = await capture(10000, "Hold both arms steady", readPose)
+  await capture(3000, "Raise both arms, palms up", readPose(false))
+  const arms = await capture(10000, "Hold both arms steady", readPose(true))
+  hideArms()
   stream.getTracks().forEach((track) => track.stop())
   $("#capture").hidden = true
   status.textContent = collecting ? "Saving recording…" : "Checking face and arm movement…"
@@ -134,6 +114,54 @@ async function postRecording(stream, tasks, collecting) {
   else {
     status.textContent = ""
     renderResult(result)
+  }
+}
+
+let explainRun = 0
+let stopFace3d
+
+function hideVisuals() {
+  explainRun += 1
+  stopFace3d?.()
+  for (const id of ["#viz-result", "#face3d-box", "#arms-chart-box", "#explain-card"]) $(id).hidden = true
+}
+
+async function explainResult(result) {
+  const run = explainRun
+  $("#explain-card").hidden = false
+  $("#explain-badge").textContent = "Explained by Nemotron"
+  $("#explain-text").textContent = "Nemotron is explaining your result…"
+  const { explain, ...plain } = result
+  try {
+    const out = await api("/api/explain", { result: plain })
+    if (run !== explainRun) return
+    $("#explain-text").textContent = out.text
+    $("#explain-badge").textContent = out.grounded ? "Explained by Nemotron" : "From the measured values"
+  } catch {
+    if (run === explainRun) $("#explain-card").hidden = true
+  }
+}
+
+async function showVisuals(result) {
+  hideVisuals()
+  const visuals = result.explain ?? {}
+  const overlay = visuals.face_overlay ?? {}
+  $("#viz-result").hidden = false
+  $("#arms-chart-box").hidden = false
+  if (!drawArmsChart($("#arms-chart"), visuals.arms_trace)) $("#arms-chart-box").hidden = true
+  explainResult(result)
+  if (!overlay.neutral?.length) return
+  const weaker = overlay.weaker === "left" ? "Left" : "Right"
+  $("#face3d-label").textContent = overlay.less_percent >= 10
+    ? `${weaker} mouth corner lifted ${overlay.less_percent}% less than ${weaker === "Left" ? "right" : "left"}`
+    : "Both mouth corners lifted about the same"
+  $("#face3d-box").hidden = false
+  try {
+    const module = await import("./viz_face3d.js")
+    stopFace3d = module.stopFace3d
+    if (!module.showFace3d($("#face3d"), overlay, getTessellation(), videoAspect(), $("#face3d-play"))) $("#face3d-box").hidden = true
+  } catch {
+    $("#face3d-box").hidden = true
   }
 }
 
@@ -167,6 +195,7 @@ function renderResult(result) {
   }))
   $("#outcome").focus()
   if (result.overall === "warning") startEmergency(result)
+  showVisuals(result)
 }
 
 $("#collect").onchange = (event) => { $("#labels").hidden = !event.target.checked }
@@ -178,6 +207,7 @@ $("#setup").onsubmit = async (event) => {
   }
   const collecting = $("#collect").checked
   resetEmergency()
+  hideVisuals()
   $("#result").hidden = true
   let stream
   const inputs = [...$("#setup").elements]

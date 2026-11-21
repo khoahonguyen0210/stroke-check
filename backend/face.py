@@ -56,3 +56,59 @@ def features(recording):
         "smile_onset_difference": abs(onsets[0] - onsets[1]),
         "brow_asymmetry": abs(brows[0] - brows[1]), "eye_asymmetry": abs(eyes[0] - eyes[1]),
     }
+
+
+def mirror_pairs(neutral):
+    import numpy as np
+
+    top, chin = neutral[10, :2], neutral[152, :2]
+    along = (chin - top) / max(np.linalg.norm(chin - top), 1e-6)
+    normal = np.array([-along[1], along[0]])
+    offset = (neutral[:, :2] - top) @ normal
+    left_sign = np.sign(offset[263]) or 1.0
+    reflected = neutral[:, :2] - 2 * np.outer(offset, normal)
+    left = np.where(offset * left_sign > 0.002)[0]
+    right = np.where(offset * left_sign < -0.002)[0]
+    if not len(left) or not len(right):
+        return []
+    return [(int(i), int(right[np.argmin(np.linalg.norm(neutral[right, :2] - reflected[i], axis=1))])) for i in left]
+
+
+def overlay(recording):
+    import numpy as np
+
+    frames = [f for f in recording.get("frames", []) if len(f.get("landmarks", [])) >= 468]
+    relax = [np.asarray(f["landmarks"], dtype=float)[:478, :3] for f in frames if f.get("phase") == "relax"]
+    smiles = [np.asarray(f["landmarks"], dtype=float)[:478, :3] for f in frames if f.get("phase") == "smile"]
+    if not relax or not smiles or any(len(s) != len(relax[0]) for s in smiles):
+        return {}
+    neutral = np.mean(relax, axis=0)
+    eye = max(float(np.linalg.norm(neutral[263, :2] - neutral[33, :2])), 1e-3)
+
+    def moved(points):
+        return ((points[:, :2] - points[168, :2]) - (neutral[:, :2] - neutral[168, :2])) / eye
+
+    def corner_lift(points):
+        shift = moved(points)
+        return -shift[291, 1] - shift[61, 1]
+
+    peak = max(smiles, key=corner_lift)
+    displacement = np.linalg.norm(moved(peak), axis=1)
+    asymmetry = np.zeros(len(neutral))
+    for i, j in mirror_pairs(neutral):
+        value = abs(displacement[i] - displacement[j]) / max(displacement[i], displacement[j], 0.02)
+        asymmetry[i] = max(asymmetry[i], value)
+        asymmetry[j] = max(asymmetry[j], value)
+    values = features(recording)
+    left, right = values.get("smile_left", 0.0), values.get("smile_right", 0.0)
+    weaker = "left" if left < right else "right"
+    stronger = max(left, right)
+    return {
+        "neutral": np.round(neutral, 4).tolist(),
+        "smile": np.round(peak, 4).tolist(),
+        "asymmetry": np.round(np.clip(asymmetry, 0, 1), 3).tolist(),
+        "lift_left": round(float(left), 4),
+        "lift_right": round(float(right), 4),
+        "weaker": weaker,
+        "less_percent": round(100 * (1 - min(left, right) / stronger)) if stronger > 0 else 0,
+    }
