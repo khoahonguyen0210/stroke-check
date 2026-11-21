@@ -18,6 +18,35 @@ FIELDS = [
 STATUS_FIELDS = ["someone_present", "called_911", "destination_hospital"]
 ALL_FIELDS = STATUS_FIELDS + FIELDS
 
+PRELIMINARY = {
+    "someone_present": ("Is someone with you right now?", "¿Hay alguien con usted ahora?", "Bây giờ có ai ở bên bạn không?"),
+    "called_911": ("Has anyone called 911 yet?", "¿Ya llamó alguien al 911?", "Đã có ai gọi 911 chưa?"),
+    "last_known_normal": ("When were they last seen acting as usual?", "¿Cuándo fue la última vez que se comportó como de costumbre?", "Lần cuối người đó được thấy vẫn bình thường là khi nào?"),
+    "blood_thinners": ("Do they take blood thinners? If you know, tell me the name.", "¿Toma anticoagulantes? Si sabe el nombre, dígamelo.", "Họ có dùng thuốc chống đông máu không? Hãy cho biết tên nếu bạn biết."),
+    "current_medications": ("What other medications do they take?", "¿Qué otros medicamentos toma?", "Họ dùng những thuốc nào khác?"),
+    "allergies": ("Do they have any medication allergies?", "¿Tiene alergias a algún medicamento?", "Người đó có dị ứng với thuốc nào không?"),
+    "recent_fall_or_head_injury": ("Have they recently fallen or hit their head?", "¿Se ha caído o golpeado la cabeza recientemente?", "Gần đây người đó có bị ngã hoặc va đập đầu không?"),
+    "diabetes": ("Do they have diabetes?", "¿Tiene diabetes?", "Người đó có bị tiểu đường không?"),
+    "seizure": ("Have they had a seizure during this episode?", "¿Ha tenido una convulsión durante este episodio?", "Người đó có bị co giật trong lần này không?"),
+}
+
+DISPATCH_NUMBER = r"(?:9[ -]?1[ -]?1|nine one one)"
+CALL_NEGATIVE = r"\b(?:not|never|haven['’]?t|hasn['’]?t|didn['’]?t|no one|nobody|chưa|không)\b|\bno (?:he |she |han |ha )?llam"
+CALL_CONFIRMED = re.compile(
+    rf"\b(?:called|dialed|llam(?:é|ó|amos|aron)|đã gọi|gọi)\s+(?:al\s+)?{DISPATCH_NUMBER}\b"
+    rf"|\b{DISPATCH_NUMBER}(?:[’']s been|\s+(?:has (?:already )?been |was (?:already )?|is |ya fue )?)\s*(?:called|contacted|llamado)\b"
+    rf"|\b(?:llam(?:é|ó|amos|aron) ya al|đã gọi đến)\s+{DISPATCH_NUMBER}\b"
+    rf"|\b(?:đã gọi\s+{DISPATCH_NUMBER}|gọi\s+{DISPATCH_NUMBER}\s+rồi)\b",
+    re.I,
+)
+CALL_REMINDER = re.compile(
+    rf"\b(?:call|dial|phone|ring|contact|llam(?:a|e|en)|gọi)\s+(?:(?:al|the)\s+)?(?:{DISPATCH_NUMBER}|emergency services)\b"
+    rf"|\bmake sure [^.]*called {DISPATCH_NUMBER}\b", re.I,
+)
+SHORT_YES = r"(?:yes|yes indeed|yeah|yep|sí|si|có|vâng|rồi)"
+SHORT_NO = r"(?:no|nope|none|ninguna?|không)"
+UNKNOWN = r"(?:skip(?: this)?|(?:i )?don['’]?t know|(?:i(?:['’]m| am) )?not sure|unknown|no sé|không biết)"
+
 NO_MATCH = {
     "en": "Ask the 911 dispatcher.",
     "es": "Pregunte al operador del 911.",
@@ -26,6 +55,7 @@ NO_MATCH = {
 
 LINES = {
     "call_911": {"en": "Call 911 now.", "es": "Llame al 911 ahora.", "vi": "Hãy gọi 911 ngay."},
+    "follow_dispatcher": {"en": "Follow the dispatcher’s instructions.", "es": "Siga las instrucciones del operador.", "vi": "Hãy làm theo hướng dẫn của nhân viên tổng đài."},
     "follow_paramedics": {"en": "Follow the paramedics' instructions.", "es": "Siga las instrucciones de los paramédicos.",
                           "vi": "Hãy làm theo hướng dẫn của nhân viên cấp cứu."},
     "help_coming": {"en": "Help is on the way. Your contacts have been alerted.",
@@ -76,8 +106,45 @@ def answer_is(value, kind):
     return bool(re.search(NO, text))
 
 
+def confirmed_call_statement(value):
+    for clause in re.split(r"[.!?,;]+|\bbut\b", value, flags=re.I):
+        if re.match(r"^\s*(have you|has anyone|did|should|can|has 911|was 911)\b", clause, re.I):
+            continue
+        if CALL_CONFIRMED.search(clause) and not re.search(CALL_NEGATIVE, clause, re.I):
+            return True
+    return False
+
+
+def confirmed_call_answer(value):
+    answer = value.lower().strip().rstrip(".!")
+    if confirmed_call_statement(value):
+        return True
+    if re.search(CALL_NEGATIVE, value, re.I):
+        return False
+    return bool(
+        re.match(rf"^{SHORT_YES}(?:[,\s]|$)", answer)
+        or re.fullmatch(r"(?:we |i |someone |they )?(?:already )?called(?: already)?|(?:they['’]re|the ambulance is) on the way|ya llamé|đã gọi", answer)
+    )
+
+
 def called_911(state):
-    return answer_is(state["facts"].get("called_911"), "yes")
+    return state.get("call_confirmed", False) or confirmed_call_answer(state["facts"].get("called_911") or "")
+
+
+def pending_preliminary(state):
+    if state.get("paramedics_here"):
+        return None
+    skipped = state.get("preliminary_skipped", [])
+    return next((
+        field for field in PRELIMINARY
+        if field not in skipped and (
+            not called_911(state) if field == "called_911" else not state["facts"].get(field)
+        )
+    ), None)
+
+
+def preliminary_prompt(state, field):
+    return PRELIMINARY[field][("en", "es", "vi").index(lang(state))]
 
 
 def alone(state):
@@ -110,28 +177,19 @@ def next_step(state):
         return "the family did not answer: ask your last question again, in fewer words"
     if state.get("no_answer", 0) >= 2:
         return "still no answer: speak 'help is on the way', call notify_contacts, then finish_turn"
-    if "someone_present" not in state["asked"] and "someone_present" not in state["facts"]:
-        return "ask(field='someone_present'): Is someone with you right now?"
-    if alone(state) and "contacts_alerted" not in covered:
-        return "speak: your trusted contacts are being alerted"
-    if alone(state) and "safe_position" not in covered:
-        return "speak: unlock the door, then sit or lie down somewhere safe"
-    if "called_911" not in state["asked"] and not called_911(state):
-        return "ask(field='called_911'): have you called 911 yet?"
-    if not lkn and "last_known_normal" not in state["asked"]:
-        return "ask(field='last_known_normal'): when was the person last seen acting normal?"
+    field = pending_preliminary(state)
+    if field:
+        return f"ask(field='{field}'): {preliminary_prompt(state, field)}"
     if "no_food_drink_medicine" not in covered:
         return "speak: do not give any food, drink or medicine"
-    if not alone(state) and "stay_and_unlock" not in covered:
+    if "stay_and_unlock" not in covered:
         return "speak: stay with the person and unlock the door for the paramedics"
-    for field in FIELDS[1:]:
-        if field not in state["asked"] and field not in state["facts"]:
-            simple = " Use a simple yes/no question." if alone(state) else ""
-            return f"ask(field='{field}').{simple}"
     return "speak: stay where you are until the paramedics arrive"
 
 
 def _say(state, text, kind):
+    if called_911(state) and CALL_REMINDER.search(text or ""):
+        return {"ok": False, "error": "The call to 911 is confirmed. Do not repeat the call instruction."}
     if re.search(r"<\||\w+\s*\{", text or ""):
         return {"ok": False, "error": "text must be plain words for the family, not a tool call."}
     check = safety.check(text)
@@ -141,6 +199,8 @@ def _say(state, text, kind):
         state["timeline"].append({"t": now(), "event": f"{kind}: {text}"})
         return {"ok": True, "said": text}
     line = safety.replacement(check["reason"], state["language"])
+    if called_911(state) and CALL_REMINDER.search(line):
+        line = LINES["follow_dispatcher"][lang(state)]
     mark_covered(state, line)
     state["said"].append(line)
     state["blocked"].append({"t": now(), "tool": kind, "text": text, "reason": check["reason"], "replaced_with": line})
@@ -160,12 +220,25 @@ def ask(state, field, question):
         return {"ok": False, "error": f"Unknown field. Use one of: {', '.join(ALL_FIELDS)}"}
     if state.get("asked_this_turn"):
         return {"ok": False, "error": "Only one question per turn. Call finish_turn now."}
-    if state["facts"].get(field) and not state.get("no_answer"):
+    if not state.get("guided"):
+        pending = pending_preliminary(state)
+        if state.get("care_question"):
+            return {"ok": False, "error": "Answer the family's care question first. Resume the handoff on the next turn."}
+        if pending and pending != field:
+            return {"ok": False, "error": f"Ask the outstanding question for {pending} first."}
+        if field == "called_911" and called_911(state):
+            return {"ok": False, "error": "The call to 911 is already confirmed."}
+        if field in PRELIMINARY:
+            question = preliminary_prompt(state, field)
+    if state["facts"].get(field) and field != "called_911" and not state.get("no_answer"):
         return {"ok": False, "error": f"{field} is already recorded. Follow STATE.next_step instead."}
-    if field not in state["asked"]:
-        state["asked"].append(field)
-    state["asked_this_turn"] = True
-    return _say(state, question, f"ask {field}")
+    result = _say(state, question, f"ask {field}")
+    if result.get("ok") and not result.get("blocked"):
+        if field not in state["asked"]:
+            state["asked"].append(field)
+        state["pending_question"] = field
+        state["asked_this_turn"] = True
+    return result
 
 
 def _norm(text):
@@ -189,6 +262,16 @@ def record_fact(state, field, value):
         return {"ok": False, "error": f"Unknown field. Use one of: {', '.join(ALL_FIELDS)}"}
     if not _said_by_family(state, value):
         return {"ok": False, "error": "Value must be the family's exact words, copied from their message. Do not infer or rephrase."}
+    if field == "called_911":
+        if called_911(state):
+            return {"ok": True, "field": field, "value": state["facts"][field]}
+        latest = state["family"][-1] if state["family"] else ""
+        if confirmed_call_statement(latest) or (
+            state.get("pending_question") == field and confirmed_call_answer(latest)
+        ):
+            state["call_confirmed"] = True
+        else:
+            return {"ok": False, "error": "The family has not confirmed a completed call to 911."}
     state["facts"][field] = value
     state["timeline"].append({"t": now(), "event": f"recorded {field}: {value}"})
     return {"ok": True, "field": field, "value": value}

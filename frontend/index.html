@@ -27,18 +27,6 @@
       <form id="setup">
         <h2>Start a check</h2>
         <label class="name-input">Name <input id="name" required maxlength="80" autocomplete="given-name" placeholder="Enter your name"></label>
-        <label><input id="collect" type="checkbox"> Data collection mode</label>
-        <fieldset id="labels" hidden>
-          <legend>Take details</legend>
-          <label>Signs <select id="label">
-            <option value="normal">Normal</option>
-            <option value="face_droop">Face droop</option>
-            <option value="arm_drift">Arm drift</option>
-            <option value="face_droop,arm_drift">Face and arms</option>
-          </select></label>
-          <label>Lighting <select id="lighting"><option value="good">Good</option><option value="dim">Dim</option></select></label>
-          <label><input id="glasses" type="checkbox"> Glasses</label>
-        </fieldset>
         <label><input id="share-location" type="checkbox"> Share location with trusted contacts if alerted</label>
         <label class="name-input">Your phone (optional) <input id="phone" type="tel" maxlength="40" autocomplete="tel" placeholder="Shown to your contacts only if a warning fires"></label>
         <div class="setup-actions">

@@ -69,7 +69,7 @@ function capture(duration, message, read) {
 }
 
 
-async function postRecording(stream, tasks, collecting) {
+async function postRecording(stream, tasks) {
   const face = []
   $("#capture-step").textContent = "Step 1 of 2 · Face"
   $("#capture-hint").textContent = "Keep your head still and face the camera."
@@ -96,25 +96,20 @@ async function postRecording(stream, tasks, collecting) {
   hideArms()
   stream.getTracks().forEach((track) => track.stop())
   $("#capture").hidden = true
-  status.textContent = collecting ? "Saving recording…" : "Checking face and arm movement…"
+  status.textContent = "Checking face and arm movement…"
   const data = new FormData()
   data.set("meta", JSON.stringify({
     name: $("#name").value.trim(), user_agent: navigator.userAgent,
-    glasses: $("#glasses").checked, lighting: $("#lighting").value,
   }))
   data.set("face", new Blob([JSON.stringify({ fps: face.length / 9, frames: face })], { type: "application/json" }), "face.json")
   data.set("arms", new Blob([JSON.stringify({ fps: arms.length / 10, frames: arms })], { type: "application/json" }), "arms.json")
-  if (collecting) data.set("label", $("#label").value)
-  const response = await fetch(collecting ? "/api/collect" : "/api/check", { method: "POST", body: data })
+  const response = await fetch("/api/check", { method: "POST", body: data })
   const result = await response.json().catch(() => null)
   if (!response.ok || !result) {
     throw new Error(typeof result?.detail === "string" ? result.detail : `The recording could not be submitted (HTTP ${response.status}).`)
   }
-  if (collecting) status.textContent = `Saved to ${result.path}`
-  else {
-    status.textContent = ""
-    renderResult(result)
-  }
+  status.textContent = ""
+  renderResult(result)
 }
 
 let explainRun = 0
@@ -214,14 +209,12 @@ function renderResult(result) {
   showVisuals(result)
 }
 
-$("#collect").onchange = (event) => { $("#labels").hidden = !event.target.checked }
 $("#setup").onsubmit = async (event) => {
   event.preventDefault()
   if (alertPending) {
     $("#alert-status").focus()
     return
   }
-  const collecting = $("#collect").checked
   resetEmergency()
   hideVisuals()
   $("#result").hidden = true
@@ -239,7 +232,7 @@ $("#setup").onsubmit = async (event) => {
     await video.play()
     $("#capture").hidden = false
     status.textContent = ""
-    const recording = postRecording(stream, tasks, collecting)
+    const recording = postRecording(stream, tasks)
     $("#prompt").focus()
     await recording
   } catch (error) {
@@ -626,7 +619,7 @@ function updateAgent(response, run) {
   addLine("agent", response.say)
   $("#agent-say").textContent = response.say ?? ""
   $("#replay-agent").hidden = !response.say
-  $("#script-card").hidden = !response.script_911
+  $("#script-card").hidden = !response.script_911 || response.state?.call_confirmed === true
   $("#script-911").textContent = response.script_911 ?? ""
   renderHandoff(response)
   speakThenListen(response.say, agentState?.session)

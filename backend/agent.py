@@ -22,9 +22,9 @@ MODELS = {
 
 LANGUAGES = {"en": "English", "es": "Spanish", "vi": "Vietnamese"}
 NO_ANSWER = r"^\(?\s*no answer\s*\)?$"
-PARAMEDICS = r"paramedic|ambulance is here|ambulance's here|ems is here|they're here|paramédicos|ambulancia (ya )?(está aquí|llegó)|cấp cứu (đã )?(đến|tới)|xe cứu thương (đã )?(đến|tới)"
+PARAMEDICS = r"^\s*paramedics(?: are)? here[.!]?$|\b(?:paramedics|ems|(?:the )?ambulance) (?:are here|is here|(?:have |has )?arrived)\b|\bparamédicos (?:llegaron|están aquí)\b|\bcấp cứu đã (?:đến|tới)\b"
 
-PROMPT_VERSION = "v5"
+PROMPT_VERSION = "v6"
 SYSTEM = """You are the Stroke Check emergency assistant. A stroke warning check just found possible stroke signs. The app has already shown "Call 911 now."
 You talk with the person, or with the helper next to them, until the paramedics arrive. You act only through tools.
 
@@ -39,7 +39,8 @@ Conversation rules:
 - Your first question is "Is someone with you right now?" (field someone_present).
 - If the person is alone: tell them their contacts are being alerted, to unlock the door and sit or lie down somewhere safe, then ask the handoff questions as simple yes/no questions.
 - If someone is with them: talk to that helper about the person.
-- Ask whether 911 has been called (field called_911). The app repeats "Call 911 now" every turn until it has.
+- Ask whether 911 has been called only when STATE.call_confirmed is false. If it is true, acknowledge it briefly when relevant and do not ask again or tell them to call.
+- Finish the preliminary handoff fields in STATE.next_step order before open-ended conversation. Ask about blood thinners, other medicines, allergies, head injury, diabetes and seizures one at a time. If the family asks a care question early, answer it without consuming their pending handoff question.
 - If the answer is short or unclear, ask again in simpler words instead of guessing.
 - Once last_known_normal is known, call write_911_script.
 - When 911 has been called, call notify_contacts("911 has been called.") once.
@@ -93,6 +94,10 @@ def new_state(result, language):
         "started_at": agent_tools.now(),
         "timer": {"last_known_normal": None, "set_at": None},
         "facts": {},
+        "call_confirmed": False,
+        "pending_question": None,
+        "preliminary_skipped": [],
+        "care_question": False,
         "asked": [],
         "family": [],
         "conversation": [],
@@ -118,6 +123,7 @@ def context(state):
         "signs": state["result"]["signs"],
         "last_known_normal": state["timer"]["last_known_normal"],
         "facts_recorded": state["facts"],
+        "call_confirmed": agent_tools.called_911(state),
         "fields_already_asked": state["asked"],
         "already_covered": state["covered"],
         "script_911_written": bool(state["script_911"]),
@@ -197,9 +203,11 @@ def fallback(state, actions, reason):
     lkn = state["timer"]["last_known_normal"] or state["facts"].get("last_known_normal")
     if state["paramedics_here"]:
         line = agent_tools.LINES["follow_paramedics"][agent_tools.lang(state)]
-    elif not state["said"]:
+    elif state.get("care_question"):
+        line = agent_tools.NO_MATCH[agent_tools.lang(state)]
+    elif not state["said"] and not agent_tools.called_911(state):
         line = script[0] + " " + script[1]
-    elif "told_911" not in covered:
+    elif "told_911" not in covered and not agent_tools.called_911(state):
         line = script[1]
     elif not lkn and state["script_pos"] < 1:
         line = script[2]
@@ -280,17 +288,23 @@ def enforce(state, actions, said_before, handoff_turn):
         res = agent_tools.write_911_script(state)
         if res.get("ok") and res["script_911"] != before and not any(a["tool"] == "write_911_script" for a in actions):
             act(actions, "write_911_script", {}, res, by="code")
-    if not agent_tools.called_911(state) and not any("911" in s for s in state["said"][said_before:]):
+    field = agent_tools.pending_preliminary(state)
+    if not field and state.get("pending_question") in agent_tools.PRELIMINARY:
+        state["pending_question"] = None
+    if field and not state["asked_this_turn"] and not state.get("care_question") and state["no_answer"] < 2:
+        args = {"field": field, "question": agent_tools.preliminary_prompt(state, field)}
+        act(actions, "ask", args, agent_tools.ask(state, **args), by="code")
+    if not agent_tools.called_911(state) and not any(agent_tools.CALL_REMINDER.search(s) for s in state["said"][said_before:]):
         line = agent_tools.LINES["call_911"][l]
         state["said"].insert(said_before, line)
         agent_tools.mark_covered(state, line)
         act(actions, "speak", {"text": line}, {"ok": True, "said": line}, by="code", note="repeated until 911 is called")
 
 
-def run_turn(state, model_name="bolt", reasoning=False, failover=True):
+def run_turn(state, model_name="bolt", reasoning=False, failover=True, initial_actions=None):
     from openai import InternalServerError, RateLimitError
 
-    actions = []
+    actions = list(initial_actions or [])
     said_before = len(state["said"])
     state["turn_said_start"] = said_before
     state["asked_this_turn"] = False
@@ -395,10 +409,40 @@ def start(result, language="en", model_name="bolt", reasoning=False, failover=Tr
     return respond(state, actions, say, model)
 
 
+def capture_preliminary_reply(state, text, actions):
+    field = state.get("pending_question")
+    if not agent_tools.called_911(state) and (
+        agent_tools.confirmed_call_statement(text)
+        or (field == "called_911" and agent_tools.confirmed_call_answer(text))
+    ):
+        args = {"field": "called_911", "value": text}
+        act(actions, "record_fact", args, agent_tools.record_fact(state, **args), by="code")
+        return
+    if not field or state.get("care_question") or state.get("paramedics_here"):
+        return
+    normalized = text.lower().strip().rstrip(".!")
+    if re.fullmatch(agent_tools.UNKNOWN, normalized):
+        if field not in state["preliminary_skipped"]:
+            state["preliminary_skipped"].append(field)
+        return
+    yes = re.fullmatch(agent_tools.SHORT_YES, normalized)
+    no = re.fullmatch(agent_tools.SHORT_NO, normalized)
+    if field == "last_known_normal" and re.search(r"\b\d{1,2}:\d{2}\b", text):
+        act(actions, "start_timer", {"last_known_normal": text}, agent_tools.start_timer(state, text), by="code")
+    elif field not in ("called_911", "last_known_normal") and (no or (yes and field != "current_medications")):
+        args = {"field": field, "value": text}
+        act(actions, "record_fact", args, agent_tools.record_fact(state, **args), by="code")
+
+
+
 def reply(text, state, language=None, model_name="bolt", reasoning=False, failover=True):
     if language in LANGUAGES:
         state["language"] = language
     text = (text or "").strip()
+    actions = []
+    state["care_question"] = text.endswith("?") or bool(re.match(
+        r"^(?:what|where|when|why|how|can (?:i|we)|should (?:i|we)|could (?:i|we)|¿|tôi có nên)\b", text, re.I,
+    ))
     if re.fullmatch(NO_ANSWER, text.lower()):
         state["no_answer"] = state.get("no_answer", 0) + 1
         state["conversation"].append({"role": "family", "text": "(no answer)"})
@@ -408,9 +452,10 @@ def reply(text, state, language=None, model_name="bolt", reasoning=False, failov
         state["family"].append(text)
         state["conversation"].append({"role": "family", "text": text})
         state["timeline"].append({"t": agent_tools.now(), "event": f"family: {text}"})
-        if re.search(PARAMEDICS, text.lower()):
+        if not state["care_question"] and re.search(PARAMEDICS, text.lower()):
             state["paramedics_here"] = True
-    say, actions, model = run_turn(state, model_name, reasoning, failover)
+        capture_preliminary_reply(state, text, actions)
+    say, actions, model = run_turn(state, model_name, reasoning, failover, actions)
     return respond(state, actions, say, model)
 
 
