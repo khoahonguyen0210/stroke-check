@@ -28,6 +28,7 @@
         <label>Lighting <select id="lighting"><option value="good">Good</option><option value="dim">Dim</option></select></label>
         <label><input id="glasses" type="checkbox"> Glasses</label>
       </fieldset>
+      <label><input id="share-location" type="checkbox"> Share location with trusted contacts if alerted</label>
       <button id="start">Start check</button>
       <button id="contacts-open" type="button">Trusted contacts</button>
     </form>
@@ -52,6 +53,23 @@
       <h2 id="outcome" role="alert"></h2>
       <p id="retake-reason"></p>
       <div id="signs"></div>
+      <section id="emergency" hidden>
+        <h2>Emergency assistant</h2>
+        <p id="last-normal">Last known normal time is unknown.</p>
+        <p id="agent-say" role="status"></p>
+        <form id="agent-answer">
+          <label>Answer <input id="family-message" required maxlength="1500"></label>
+          <button disabled>Send answer</button>
+        </form>
+        <h3>Paramedic handoff</h3>
+        <dl id="handoff"></dl>
+        <a id="print-handoff" target="_blank" rel="noopener" hidden>Printable handoff</a>
+        <h3>Agent actions</h3>
+        <ol id="agent-actions"></ol>
+        <h3>Trusted contact alerts</h3>
+        <p id="alert-status" role="status"></p>
+        <button id="cancel-alert" type="button">Cancel — false alarm</button>
+      </section>
       <button id="retake" type="button" hidden>Retake</button>
     </section>
     <p id="status" role="status"></p>

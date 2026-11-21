@@ -161,11 +161,17 @@ function renderResult(result) {
     card.append(title, detail)
     return card
   }))
+  if (result.overall === "warning") startEmergency(result)
 }
 
 $("#collect").onchange = (event) => { $("#labels").hidden = !event.target.checked }
 $("#setup").onsubmit = async (event) => {
   event.preventDefault()
+  if (alertPending) {
+    $("#alert-status").focus()
+    return
+  }
+  resetEmergency()
   $("#result").hidden = true
   let stream
   const collecting = $("#collect").checked
@@ -253,4 +259,144 @@ $("#contacts-test").onclick = async (event) => {
   } finally {
     event.target.disabled = false
   }
+}
+
+let emergencyRun = 0
+let agentState
+let lastNormalTimer
+let alertPending = false
+
+function resetEmergency() {
+  emergencyRun += 1
+  agentState = undefined
+  clearInterval(lastNormalTimer)
+  window.speechSynthesis?.cancel()
+  $("#emergency").hidden = true
+  $("#agent-say").textContent = ""
+  $("#last-normal").textContent = "Last known normal time is unknown."
+  $("#agent-answer").reset()
+  $("#agent-answer button").disabled = true
+  $("#agent-actions").replaceChildren()
+  $("#handoff").replaceChildren()
+  $("#print-handoff").hidden = true
+}
+
+function updateAgent(response, run) {
+  if (run !== emergencyRun) return
+  agentState = response.state
+  $("#agent-answer button").disabled = false
+  $("#agent-say").textContent = response.say ?? ""
+  if (response.say && window.speechSynthesis) {
+    window.speechSynthesis.cancel()
+    window.speechSynthesis.speak(new SpeechSynthesisUtterance(response.say))
+  }
+
+  const handoff = response.handoff ?? {}
+  const facts = handoff.facts ?? {}
+  const known = facts.last_known_normal ?? agentState?.last_known_normal
+  const knownAt = typeof known === "string" && /^\d{4}-\d{2}-\d{2}T/.test(known) ? Date.parse(known) : NaN
+  clearInterval(lastNormalTimer)
+  function timer() {
+    if (!known) return
+    const elapsed = Math.max(0, Math.floor((Date.now() - knownAt) / 1000))
+    const minutes = Math.floor(elapsed / 60)
+    $("#last-normal").textContent = Number.isFinite(knownAt)
+      ? `Time since last known normal · ${minutes} min ${elapsed % 60} s`
+      : `Last known normal · ${known}`
+  }
+  timer()
+  if (Number.isFinite(knownAt)) lastNormalTimer = setInterval(timer, 1000)
+
+  $("#handoff").replaceChildren()
+  const entries = { ...handoff.signs, ...facts }
+  if (handoff.time_noticed) entries.time_noticed = handoff.time_noticed
+  for (const [key, value] of Object.entries(entries)) {
+    const label = document.createElement("dt")
+    label.textContent = key.replaceAll("_", " ")
+    const detail = document.createElement("dd")
+    detail.textContent = typeof value === "object" ? JSON.stringify(value) : value
+    $("#handoff").append(label, detail)
+  }
+  if (agentState?.session) {
+    $("#print-handoff").href = `/api/agent/handoff/${encodeURIComponent(agentState.session)}`
+    $("#print-handoff").hidden = false
+  }
+  for (const action of response.actions ?? []) {
+    const item = document.createElement("li")
+    item.textContent = `${action.tool ?? action.name ?? "Action"} ${action.args ? JSON.stringify(action.args) : ""}`
+    $("#agent-actions").append(item)
+  }
+}
+
+async function startEmergency(result) {
+  const run = emergencyRun
+  $("#emergency").hidden = false
+  const user = $("#name").value.trim()
+  startAlertCountdown(user, result)
+  $("#agent-say").textContent = "Call 911 now and follow the dispatcher’s instructions."
+  try {
+    updateAgent(await api("/api/agent/start", { result: { ...result, user }, language: "en" }), run)
+  } catch {
+    if (run === emergencyRun) $("#agent-say").textContent = "Call 911 now and follow the dispatcher’s instructions. Tell them when the person was last acting normally."
+  }
+}
+
+$("#agent-answer").onsubmit = async (event) => {
+  event.preventDefault()
+  if (!agentState) return
+  const run = emergencyRun
+  const input = $("#family-message")
+  const text = input.value.trim()
+  if (!text) return
+  const button = $("#agent-answer button")
+  button.disabled = true
+  try {
+    updateAgent(await api("/api/agent/message", { text, state: agentState, language: "en" }), run)
+    if (run === emergencyRun) input.value = ""
+  } catch {
+    if (run === emergencyRun) $("#agent-say").textContent = "The assistant could not respond. Follow the 911 dispatcher’s instructions."
+  } finally {
+    if (run === emergencyRun) button.disabled = false
+  }
+}
+
+function startAlertCountdown(user, result) {
+  const detectedAt = new Date().toISOString()
+  const deadline = Date.now() + 20000
+  const cancel = $("#cancel-alert")
+  const output = $("#alert-status")
+  let location
+  alertPending = true
+  cancel.hidden = false
+  if ($("#share-location").checked) {
+    navigator.geolocation?.getCurrentPosition(({ coords }) => {
+      location = { latitude: coords.latitude, longitude: coords.longitude }
+    }, () => {}, { timeout: 10000 })
+  }
+  cancel.onclick = () => {
+    clearInterval(timer)
+    alertPending = false
+    cancel.hidden = true
+    output.textContent = "Trusted contact alerts cancelled."
+  }
+  async function tick() {
+    const remaining = Math.ceil((deadline - Date.now()) / 1000)
+    if (remaining > 0) {
+      output.textContent = `Alerting your trusted contacts in ${remaining} seconds.`
+      return
+    }
+    clearInterval(timer)
+    cancel.hidden = true
+    output.textContent = "Sending alerts…"
+    try {
+      const { sent } = await api("/api/alert", { user, result, detected_at: detectedAt, location })
+      output.textContent = `${new Date().toLocaleTimeString()} · ${deliverySummary(sent)}`
+    } catch (error) {
+      output.textContent = `Alerts could not be sent. ${error.message}`
+    } finally {
+      alertPending = false
+    }
+  }
+  const timer = setInterval(tick, 250)
+  tick()
 }

@@ -47,17 +47,52 @@ async def baseline(user: str, meta: str = Form(), face: str = Form(), arms: str 
     return {"saved": False}
 
 
+HANDOFFS = {}
+
+
+def agent_response(operation, *args):
+    try:
+        from backend import agent
+
+        response = getattr(agent, operation)(*args)
+    except (ImportError, AttributeError):
+        state = args[1] if operation == "reply" else {}
+        response = {"say": "Call 911 now and follow the dispatcher's instructions.", "actions": [], "handoff": {}, "state": state}
+    session = response["state"].get("session")
+    if session is not None:
+        HANDOFFS[str(session)] = response["handoff"]
+    return response
+
+
 @app.post("/api/agent/start")
+def agent_start(payload: dict):
+    if not isinstance(payload.get("result"), dict):
+        raise HTTPException(422, "Check result is required.")
+    return agent_response("start", payload["result"], payload.get("language", "en"))
+
+
 @app.post("/api/agent/message")
-def agent_stub(payload: dict):
-    return {"say": "Call 911 now and follow the dispatcher's instructions.", "actions": [], "handoff": {}, "state": {}}
+def agent_message(payload: dict):
+    if not isinstance(payload.get("state"), dict) or not isinstance(payload.get("text"), str):
+        raise HTTPException(422, "Message and agent state are required.")
+    return agent_response("reply", payload["text"], payload["state"], payload.get("language", "en"))
 
 
 @app.get("/api/agent/handoff/{session}")
 def handoff(session: str):
     from fastapi.responses import PlainTextResponse
 
-    return PlainTextResponse("No handoff available.")
+    if session not in HANDOFFS:
+        raise HTTPException(404, "Handoff not found.")
+    details = HANDOFFS[session]
+    facts = details.get("facts", {})
+    signs = details.get("signs", {})
+    lines = ["Stroke Check paramedic handoff"]
+    if details.get("time_noticed"):
+        lines.append(f"Time noticed: {details['time_noticed']}")
+    lines.extend(f"{name.replace('_', ' ')}: {value}" for name, value in signs.items())
+    lines.extend(f"{name.replace('_', ' ')}: {value}" for name, value in facts.items())
+    return PlainTextResponse("\n".join(lines))
 
 
 CONTACT_LOCK = Lock()
