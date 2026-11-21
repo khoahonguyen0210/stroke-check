@@ -447,25 +447,12 @@ def build_handoff(state):
     }
 
 
-def spoken_summary(state):
-    h = build_handoff(state)
-    names = SIGN_NAMES["en"]
-    parts = ["Paramedic summary. This is an automated warning, not a diagnosis.",
-             "Possible stroke signs: " + (", ".join(names.get(k, k) for k in h["signs"]) or "none") + "."]
-    if h["facts"]["last_known_normal"]:
-        parts.append(f"Last seen normal: {clean(h['facts']['last_known_normal'])}.")
-    for field in FIELDS[1:]:
-        if h["facts"].get(field):
-            parts.append(f"{field.replace('_', ' ').capitalize()}: {clean(h['facts'][field])}.")
-    return " ".join(parts)
-
-
 def write_handoff(state):
     if not state["handoff_written"]:
         state["timeline"].append({"t": now(), "event": "handoff written"})
     state["handoff_written"] = True
     return {"ok": True, "handoff": build_handoff(state)["text"],
-            "next": "Handoff is ready. The app will read the summary out loud. Call finish_turn."}
+            "next": "Handoff is ready to display. Call finish_turn."}
 
 
 def finish_turn(state):

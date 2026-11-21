@@ -24,7 +24,7 @@ LANGUAGES = {"en": "English", "es": "Spanish", "vi": "Vietnamese"}
 NO_ANSWER = r"^\(?\s*no answer\s*\)?$"
 PARAMEDICS = r"^\s*paramedics(?: are)? here[.!]?$|\b(?:paramedics|ems|(?:the )?ambulance) (?:are here|is here|(?:have |has )?arrived)\b|\bparamédicos (?:llegaron|están aquí)\b|\bcấp cứu đã (?:đến|tới)\b"
 
-PROMPT_VERSION = "v7"
+PROMPT_VERSION = "v8"
 SYSTEM = """You are the Stroke Check emergency assistant. A stroke warning check just found possible stroke signs. The app has already shown "Call 911 now."
 You talk with the person, or with the helper next to them, until the paramedics arrive. You act only through tools.
 
@@ -32,7 +32,7 @@ Every turn, in this order:
 1. If the last message states a fact, call record_fact (or start_timer for the time) first. Fields someone_present and called_911 are facts too.
 2. If the last message asks for help or raises a care concern, call lookup_guidance using the latest concern. Call speak to deliver the grounded answer, then wait.
 3. Otherwise listen to the person's words. Briefly acknowledge what they just told you when it helps, or ask one short clarifying question. Continue with STATE.next_step when a handoff question is pending. Speak naturally in {language}.
-   When the handoff is complete, respond to their latest input. Offer to repeat or clarify the handoff if useful. Avoid repeating a static script or adding new care instructions.
+   When the handoff is complete, respond to their latest input. Point to the written handoff if useful. Keep the paramedic summary in writing. Avoid repeating a static script or adding new care instructions.
 4. Call finish_turn().
 
 Conversation rules:
@@ -274,10 +274,6 @@ def enforce(state, actions, said_before, handoff_turn):
             verify_handoff(state, actions)
             if state["script_911"]:
                 agent_tools.write_911_script(state)
-        summary = agent_tools.spoken_summary(state)
-        state["said"].append(summary)
-        state["timeline"].append({"t": agent_tools.now(), "event": "read the handoff summary out loud"})
-        act(actions, "speak", {"text": "(handoff summary)"}, {"ok": True, "said": summary}, by="code", note="family's own words, read to paramedics")
         return
     if state["paramedics_here"]:
         return
@@ -365,10 +361,11 @@ def run_turn(state, model_name="bolt", reasoning=False, failover=True, initial_a
             if len(state["said"]) == said_before:
                 fallback(state, actions, f"{type(error).__name__}")
     enforce(state, actions, said_before, handoff_turn)
-    if len(state["said"]) == said_before:
+    if not handoff_turn and len(state["said"]) == said_before:
         fallback(state, actions, "model said nothing")
     say = " ".join(state["said"][said_before:])
-    state["conversation"].append({"role": "agent", "text": say})
+    if say:
+        state["conversation"].append({"role": "agent", "text": say})
     return say, actions, MODELS[used]["model"]
 
 

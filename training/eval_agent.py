@@ -88,7 +88,10 @@ def checks(sc, run):
     if "no_answer" in sc["tags"]:
         c["no_answer_handled"] = no_answer_handled(run)
     if "paramedics" in sc["tags"]:
-        c["handoff_read_and_checked"] = state["handoff_written"] and state["verified"] is not None and any(s.startswith("Paramedic summary") for s in said)
+        c["handoff_displayed_and_checked"] = (
+            state["handoff_written"] and state["verified"] is not None
+            and not any(s.startswith("Paramedic summary") for s in said)
+        )
     if lkn:
         c["script_911_written"] = bool(state.get("script_911"))
     script = state.get("script_911") or ""

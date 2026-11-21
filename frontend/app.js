@@ -681,7 +681,9 @@ function updateAgent(response, run) {
   if (run !== emergencyRun) return
   agentState = response.state
   addLine("agent", response.say)
-  $("#agent-say").textContent = response.say ?? ""
+  $("#agent-say").textContent = response.say || (agentState?.paramedics_here && agentState?.handoff_written
+    ? "Handoff ready to show the paramedics."
+    : "")
   $("#replay-agent").hidden = !response.say
   $("#script-card").hidden = !response.script_911 || response.state?.call_confirmed === true
   $("#script-911").textContent = response.script_911 ?? ""
