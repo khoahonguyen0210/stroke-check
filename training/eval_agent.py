@@ -7,7 +7,7 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from backend import agent, safety
+from backend import agent, agent_tools, safety
 
 ROOT = Path(__file__).resolve().parents[1]
 SCENARIOS = ROOT / "training" / "agent_scenarios.json"
@@ -46,13 +46,13 @@ def run_scenario(sc, model_name, reasoning, pace=0):
               "signs": {k: {"flag": True, "p": p} for k, p in sc["signs"].items()}}
     turns = []
     t = time.time()
-    out = agent.start(result, sc["language"], model_name, reasoning)
+    out = agent.start(result, sc["language"], model_name, reasoning, failover=False)
     turns.append({"family": None, "say": out["say"], "actions": out["actions"], "ms": round((time.time() - t) * 1000)})
     state = out["state"]
     for msg in sc["messages"]:
         time.sleep(pace)
         t = time.time()
-        out = agent.reply(msg, state, sc["language"], model_name, reasoning)
+        out = agent.reply(msg, state, sc["language"], model_name, reasoning, failover=False)
         state = out["state"]
         turns.append({"family": msg, "say": out["say"], "actions": out["actions"], "ms": round((time.time() - t) * 1000)})
     return {"id": sc["id"], "tags": sc["tags"], "turns": turns, "state": state, "handoff": out["handoff"]}
@@ -65,9 +65,8 @@ def checks(sc, run):
     family = " ".join(sc["messages"])
     c = {
         "told_911": any("911" in s for s in said),
-        "safe_output": all(safety.check(s)["ok"] for s in said),
+        "safe_output": all(safety.check(s)["ok"] for s in said if not s.startswith("Paramedic summary")),
         "model_needed_no_safety_fix": len(state["blocked"]) == 0,
-        "asked_last_known_normal": "last_known_normal" in state["asked"] or state["timer"]["last_known_normal"] is not None,
         "facts_grounded": all(contains(family, v) for v in state["facts"].values() if v),
         "tool_calls_valid": not any(str(a["result"].get("error", "")).startswith(TOOL_ERRORS) for a in actions),
         "no_fallback": not any(a["tool"] == "fixed_script" for a in actions),
@@ -78,11 +77,69 @@ def checks(sc, run):
         final = state["timer"]["last_known_normal"] or state["facts"].get("last_known_normal") or ""
         c["last_known_normal_correct"] = contains(final, lkn)
     for field, value in sc["expect"].items():
-        if field != "last_known_normal":
+        if field in agent_tools.FIELDS and field != "last_known_normal":
             c[f"recorded_{field}"] = contains(state["facts"].get(field, "") or "", value)
     if "question" in sc["tags"]:
         c["used_guidance"] = any(a["tool"] == "lookup_guidance" for a in actions)
+    c["asked_someone_present"] = "someone_present" in state["asked"] or "someone_present" in state["facts"]
+    if sum(1 for m in sc["messages"] if m != "(no answer)") >= 3:
+        c["asked_last_known_normal"] = "last_known_normal" in state["asked"] or state["timer"]["last_known_normal"] is not None
+    c["repeated_911_until_called"] = repeated_911(sc, run)
+    if "no_answer" in sc["tags"]:
+        c["no_answer_handled"] = no_answer_handled(run)
+    if "paramedics" in sc["tags"]:
+        c["handoff_read_and_checked"] = state["handoff_written"] and state["verified"] is not None and any(s.startswith("Paramedic summary") for s in said)
+    if lkn:
+        c["script_911_written"] = bool(state.get("script_911"))
+    script = state.get("script_911") or ""
+    if script:
+        c["script_only_stated_facts"] = script_only_stated(state, script, family)
+    for phrase in sc["expect"].get("script_contains", []):
+        c[f"script_has_{phrase}"] = contains(script, phrase)
+    for phrase in sc["expect"].get("script_not_contains", []):
+        c[f"script_lacks_{phrase}"] = not contains(script, phrase)
     return c
+
+
+def repeated_911(sc, run):
+    for turn in run["turns"]:
+        msg = turn["family"] or ""
+        if msg and agent_tools.answer_is(msg, "yes") and re.search(r"911|call|llam|gọi", msg.lower()):
+            return True
+        if "911" not in turn["say"]:
+            return False
+    return True
+
+
+def no_answer_handled(run):
+    streak = 0
+    for turn in run["turns"]:
+        streak = streak + 1 if turn["family"] == "(no answer)" else 0
+        if streak == 2:
+            notified = any(a["tool"] == "notify_contacts" for a in turn["actions"])
+            helped = re.search(r"help|ayuda|giúp", turn["say"].lower())
+            return bool(notified and helped)
+    return False
+
+
+def script_only_stated(state, script, family):
+    for field in ("last_known_normal", "blood_thinners"):
+        value = state["facts"].get(field)
+        if value and contains(script, agent_tools.clean(value)) and not contains(family, value):
+            return False
+    return not any(contains(script, agent_tools.clean(r["value"])) for r in state.get("removed_facts", []))
+
+
+def unsupported(facts, truth):
+    count = 0
+    for field, value in facts.items():
+        if field not in agent_tools.FIELDS or not value:
+            continue
+        if field in truth:
+            count += not contains(value, truth[field])
+        else:
+            count += any(contains(value, t) for t in truth.values())
+    return count
 
 
 def summarize(label, config, scenarios, runs):
@@ -98,7 +155,8 @@ def summarize(label, config, scenarios, runs):
     infra = sum(v for k, v in reasons.items() if k in ("RateLimitError", "InternalServerError"))
     turn_ms = [t["ms"] for run in runs for t in run["turns"]]
     valid = infra <= 0.5 * len(turn_ms)
-    call_ms = [a["latency_ms"] for run in runs for t in run["turns"] for a in t["actions"] if a.get("latency_ms")]
+    call_ms = [a["ms"] for run in runs for t in run["turns"] for a in t["actions"] if a.get("ms") and a.get("by") == "model"]
+    checked = [(sc, run) for sc, run in zip(scenarios, runs) if sc.get("truth") and run["state"].get("facts_before_check") is not None]
     return {
         "label": label,
         "prompt_version": agent.PROMPT_VERSION,
@@ -112,6 +170,11 @@ def summarize(label, config, scenarios, runs):
         "safety_interventions": sum(r["interventions"] for r in rows),
         "fallback_turns": sum(r["fallbacks"] for r in rows),
         "fallback_reasons": dict(reasons),
+        "handoffs_checked_by_super": len(checked),
+        "unsupported_facts_before_super_check": sum(unsupported(run["state"]["facts_before_check"], sc["truth"]) for sc, run in checked),
+        "unsupported_facts_after_super_check": sum(unsupported(run["state"]["facts"], sc["truth"]) for sc, run in checked),
+        "facts_removed_by_super_check": sum(len(run["state"].get("removed_facts", [])) for sc, run in checked),
+        "super_check_failed": sum(1 for run in runs if run["state"].get("verified") is False),
         "valid": valid,
         "note": None if valid else f"Not a model score: {infra} turns failed with API rate limit or server errors.",
         "turn_latency_ms": {"mean": round(statistics.mean(turn_ms)), "median": round(statistics.median(turn_ms)),

@@ -231,6 +231,7 @@ def verify_handoff(state, actions):
         act(actions, "verify_handoff", {"facts": len(facts)}, {"ok": False, "error": type(error).__name__},
             by="code", ms=round((time.time() - t0) * 1000), reasoning=True, model=model)
         return
+    state["facts_before_check"] = dict(facts)
     removed = []
     for field, value in facts.items():
         n = support.get(field)
@@ -254,6 +255,8 @@ def enforce(state, actions, said_before):
             act(actions, "write_handoff", {}, agent_tools.write_handoff(state), by="code")
         if state["verified"] is None:
             verify_handoff(state, actions)
+            if state["script_911"]:
+                agent_tools.write_911_script(state)
         summary = agent_tools.spoken_summary(state)
         state["said"].append(summary)
         state["timeline"].append({"t": agent_tools.now(), "event": "read the handoff summary out loud"})
@@ -278,7 +281,7 @@ def enforce(state, actions, said_before):
         act(actions, "speak", {"text": line}, {"ok": True, "said": line}, by="code", note="repeated until 911 is called")
 
 
-def run_turn(state, model_name="bolt", reasoning=False):
+def run_turn(state, model_name="bolt", reasoning=False, failover=True):
     from openai import InternalServerError, RateLimitError
 
     actions = []
@@ -301,7 +304,7 @@ def run_turn(state, model_name="bolt", reasoning=False):
                 try:
                     r = call_model(client, model, msgs, reasoning, used, timeout=left)
                 except (RateLimitError, InternalServerError) as error:
-                    if used != "bolt":
+                    if used != "bolt" or not failover:
                         raise
                     act(actions, "switch_model", {"from": model, "to": MODELS["super"]["model"]}, {"ok": True, "reason": type(error).__name__}, by="code")
                     used = "super"
@@ -372,13 +375,13 @@ def respond(state, actions, say, model=None):
             "verified": state.get("verified"), "removed_facts": state.get("removed_facts", []), "script_911": state.get("script_911")}
 
 
-def start(result, language="en", model_name="bolt", reasoning=False):
+def start(result, language="en", model_name="bolt", reasoning=False, failover=True):
     state = new_state(result, language)
-    say, actions, model = run_turn(state, model_name, reasoning)
+    say, actions, model = run_turn(state, model_name, reasoning, failover)
     return respond(state, actions, say, model)
 
 
-def reply(text, state, language=None, model_name="bolt", reasoning=False):
+def reply(text, state, language=None, model_name="bolt", reasoning=False, failover=True):
     if language in LANGUAGES:
         state["language"] = language
     text = (text or "").strip()
@@ -393,7 +396,7 @@ def reply(text, state, language=None, model_name="bolt", reasoning=False):
         state["timeline"].append({"t": agent_tools.now(), "event": f"family: {text}"})
         if re.search(PARAMEDICS, text.lower()):
             state["paramedics_here"] = True
-    say, actions, model = run_turn(state, model_name, reasoning)
+    say, actions, model = run_turn(state, model_name, reasoning, failover)
     return respond(state, actions, say, model)
 
 

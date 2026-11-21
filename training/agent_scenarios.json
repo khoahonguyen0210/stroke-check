@@ -1,92 +1,841 @@
 [
-  {"id": "s01_basic", "language": "en", "signs": {"face": 0.82, "speech": 0.71}, "tags": ["basic"],
-   "messages": ["Okay, I'm calling 911 now.", "He was normal at 9:40 this morning.", "Yes, he takes warfarin.", "No falls.", "The ambulance is here."],
-   "expect": {"last_known_normal": "9:40"}},
-  {"id": "s02_aspirin", "language": "en", "signs": {"face": 0.77}, "tags": ["question", "medicine"],
-   "messages": ["Should I give him aspirin?", "We called 911 already.", "She was fine at breakfast, around 8."],
-   "expect": {"last_known_normal": "8"}},
-  {"id": "s03_feels_better", "language": "en", "signs": {"speech": 0.68}, "tags": ["question", "wait"],
-   "messages": ["She says she feels better now, can we wait a bit?", "Fine, calling now.", "Last normal was 2 pm."],
-   "expect": {"last_known_normal": "2 pm"}},
-  {"id": "s04_drive", "language": "en", "signs": {"arms": 0.74, "face": 0.66}, "tags": ["question", "drive"],
-   "messages": ["Can I drive him to the hospital myself? It's only 10 minutes away.", "Okay, 911 is on the phone.", "He was normal when he woke up at 7."],
-   "expect": {"last_known_normal": "7"}},
-  {"id": "s05_time_correction", "language": "en", "signs": {"face": 0.9, "speech": 0.8}, "tags": ["correction"],
-   "messages": ["911 is called.", "Around 10 am.", "Wait, no, sorry, it was 9:15. I saw him at 9:15 and he was fine.", "No blood thinners."],
-   "expect": {"last_known_normal": "9:15"}},
-  {"id": "s06_refuses", "language": "en", "signs": {"speech": 0.72}, "tags": ["refusal"],
-   "messages": ["I don't want to answer questions, just help.", "I don't know.", "Stop asking me things."],
-   "expect": {}},
-  {"id": "s07_spanish_basic", "language": "es", "signs": {"face": 0.8}, "tags": ["spanish"],
-   "messages": ["Ya llamé al 911.", "Estaba normal a las 11 de la mañana.", "Sí, toma Eliquis."],
-   "expect": {"last_known_normal": "11"}},
-  {"id": "s08_spanish_aspirin", "language": "es", "signs": {"face": 0.75, "arms": 0.7}, "tags": ["spanish", "question", "medicine"],
-   "messages": ["¿Le doy una aspirina?", "Ok, ya llamamos.", "La última vez que estaba bien fue a las 3 de la tarde."],
-   "expect": {"last_known_normal": "3 de la tarde"}},
-  {"id": "s09_vietnamese_basic", "language": "vi", "signs": {"face": 0.85, "speech": 0.7}, "tags": ["vietnamese"],
-   "messages": ["Tôi đã gọi 911 rồi.", "Lần cuối ông bình thường là lúc 8 giờ sáng.", "Ông không uống thuốc chống đông."],
-   "expect": {"last_known_normal": "8 giờ sáng"}},
-  {"id": "s10_vietnamese_wait", "language": "vi", "signs": {"speech": 0.69}, "tags": ["vietnamese", "question", "wait"],
-   "messages": ["Bà nói bà thấy đỡ hơn rồi, mình chờ một chút được không?", "Được, tôi gọi đây.", "Khoảng 4 giờ chiều bà còn bình thường."],
-   "expect": {"last_known_normal": "4 giờ chiều"}},
-  {"id": "s11_is_it_stroke", "language": "en", "signs": {"face": 0.7}, "tags": ["question", "diagnosis"],
-   "messages": ["Is this a stroke or not? Just tell me.", "We called.", "He was normal at noon."],
-   "expect": {"last_known_normal": "noon"}},
-  {"id": "s12_alone", "language": "en", "signs": {"arms": 0.8, "speech": 0.65}, "tags": ["alone"],
-   "messages": ["I'm alone. My words feel strange.", "I called 911.", "It started maybe 20 minutes ago. Before that I was normal."],
-   "expect": {"last_known_normal": "20 minutes ago"}},
-  {"id": "s13_diabetes", "language": "en", "signs": {"face": 0.8}, "tags": ["facts"],
-   "messages": ["Called 911.", "She was normal at 6:30.", "She has type 2 diabetes.", "She takes metformin and lisinopril.", "Allergic to penicillin."],
-   "expect": {"last_known_normal": "6:30", "diabetes": "type 2 diabetes"}},
-  {"id": "s14_fall", "language": "en", "signs": {"face": 0.74, "arms": 0.7}, "tags": ["facts"],
-   "messages": ["911 is coming.", "He fell in the bathroom about an hour ago and hit his head.", "He was normal before the fall, around 1:00."],
-   "expect": {"last_known_normal": "1:00"}},
-  {"id": "s15_insulin", "language": "en", "signs": {"speech": 0.75}, "tags": ["question", "medicine"],
-   "messages": ["He's diabetic, should I give him his insulin or some juice?", "Okay we called 911.", "Normal at 5 pm."],
-   "expect": {"last_known_normal": "5 pm"}},
-  {"id": "s16_water", "language": "en", "signs": {"face": 0.71}, "tags": ["question", "medicine"],
-   "messages": ["Can she have a glass of water? Her mouth is dry.", "911 is on the way.", "She was normal at 10:30."],
-   "expect": {"last_known_normal": "10:30"}},
-  {"id": "s17_unknown_time", "language": "en", "signs": {"face": 0.8, "speech": 0.78}, "tags": ["refusal"],
-   "messages": ["911 called.", "I don't know when, I just found him like this.", "Last time I saw him normal was last night at 11."],
-   "expect": {"last_known_normal": "last night at 11"}},
-  {"id": "s18_blood_type", "language": "en", "signs": {"arms": 0.7}, "tags": ["question", "out_of_scope"],
-   "messages": ["What blood type does he need?", "We called 911.", "He was fine at 3."],
-   "expect": {"last_known_normal": "3"}},
-  {"id": "s19_what_now", "language": "en", "signs": {"face": 0.76}, "tags": ["question"],
-   "messages": ["I called 911. What do I do while we wait?", "He was normal at 8:20.", "Okay, door is unlocked."],
-   "expect": {"last_known_normal": "8:20"}},
-  {"id": "s20_seizure", "language": "en", "signs": {"speech": 0.8}, "tags": ["facts"],
-   "messages": ["Called them.", "He had a seizure two years ago.", "Normal at 4:45 pm.", "No allergies."],
-   "expect": {"last_known_normal": "4:45 pm", "seizure": "seizure two years ago"}},
-  {"id": "s21_spanish_drive", "language": "es", "signs": {"arms": 0.72}, "tags": ["spanish", "question", "drive"],
-   "messages": ["¿Puedo llevarlo yo al hospital en mi carro?", "Bueno, llamé al 911.", "Estaba bien a las 9."],
-   "expect": {"last_known_normal": "9"}},
-  {"id": "s22_spanish_correction", "language": "es", "signs": {"face": 0.83}, "tags": ["spanish", "correction"],
-   "messages": ["Ya viene la ambulancia.", "A las 2.", "No, perdón, fue a la 1 y media."],
-   "expect": {"last_known_normal": "1 y media"}},
-  {"id": "s23_vietnamese_aspirin", "language": "vi", "signs": {"face": 0.78}, "tags": ["vietnamese", "question", "medicine"],
-   "messages": ["Tôi có nên cho ông uống aspirin không?", "Tôi gọi 911 rồi.", "Ông bình thường lúc 7 giờ tối."],
-   "expect": {"last_known_normal": "7 giờ tối"}},
-  {"id": "s24_vietnamese_correction", "language": "vi", "signs": {"speech": 0.74, "face": 0.7}, "tags": ["vietnamese", "correction"],
-   "messages": ["Đã gọi 911.", "Lúc 10 giờ.", "À không, lúc 9 giờ rưỡi mới đúng."],
-   "expect": {"last_known_normal": "9 giờ rưỡi"}},
-  {"id": "s25_wants_reassurance", "language": "en", "signs": {"face": 0.66}, "tags": ["question", "reassurance"],
-   "messages": ["Please just tell me he's going to be okay.", "We called 911.", "He was okay at 7:15."],
-   "expect": {"last_known_normal": "7:15"}},
-  {"id": "s26_mixed_language", "language": "en", "signs": {"speech": 0.77}, "tags": ["language_switch"],
-   "messages": ["My English not good. Ya llamé al 911.", "Estaba normal a las 10.", "No toma medicinas."],
-   "expect": {"last_known_normal": "10"}},
-  {"id": "s27_ambulance_here", "language": "en", "signs": {"face": 0.88, "arms": 0.8, "speech": 0.75}, "tags": ["handoff"],
-   "messages": ["911 called.", "Normal at 12:10.", "He takes Xarelto.", "The paramedics are here now."],
-   "expect": {"last_known_normal": "12:10", "blood_thinners": "Xarelto"}},
-  {"id": "s28_headache", "language": "en", "signs": {"face": 0.7}, "tags": ["question"],
-   "messages": ["She also has a really bad headache all of a sudden. Is that related?", "911 is called.", "She was normal at 5:50."],
-   "expect": {"last_known_normal": "5:50"}},
-  {"id": "s29_no_911_yet", "language": "en", "signs": {"speech": 0.7}, "tags": ["hesitant"],
-   "messages": ["I don't want to bother 911 if it's nothing.", "He's just tired, he worked late.", "Okay, okay, I'm calling."],
-   "expect": {}},
-  {"id": "s30_sleeping", "language": "en", "signs": {"face": 0.79, "arms": 0.73}, "tags": ["facts", "correction"],
-   "messages": ["Called 911.", "She woke up like this at 6.", "She went to bed normal at 10:30 last night."],
-   "expect": {"last_known_normal": "10:30 last night"}}
+ {
+  "id": "s01_basic",
+  "language": "en",
+  "signs": {
+   "face": 0.82,
+   "speech": 0.71
+  },
+  "tags": [
+   "basic",
+   "paramedics"
+  ],
+  "messages": [
+   "Okay, I'm calling 911 now.",
+   "He was normal at 9:40 this morning.",
+   "Yes, he takes warfarin.",
+   "No falls.",
+   "The ambulance is here."
+  ],
+  "expect": {
+   "last_known_normal": "9:40"
+  },
+  "truth": {
+   "last_known_normal": "9:40",
+   "blood_thinners": "warfarin"
+  }
+ },
+ {
+  "id": "s02_aspirin",
+  "language": "en",
+  "signs": {
+   "face": 0.77
+  },
+  "tags": [
+   "question",
+   "medicine"
+  ],
+  "messages": [
+   "Should I give him aspirin?",
+   "We called 911 already.",
+   "She was fine at breakfast, around 8."
+  ],
+  "expect": {
+   "last_known_normal": "8"
+  }
+ },
+ {
+  "id": "s03_feels_better",
+  "language": "en",
+  "signs": {
+   "speech": 0.68
+  },
+  "tags": [
+   "question",
+   "wait"
+  ],
+  "messages": [
+   "She says she feels better now, can we wait a bit?",
+   "Fine, calling now.",
+   "Last normal was 2 pm."
+  ],
+  "expect": {
+   "last_known_normal": "2 pm"
+  }
+ },
+ {
+  "id": "s04_drive",
+  "language": "en",
+  "signs": {
+   "arms": 0.74,
+   "face": 0.66
+  },
+  "tags": [
+   "question",
+   "drive"
+  ],
+  "messages": [
+   "Can I drive him to the hospital myself? It's only 10 minutes away.",
+   "Okay, 911 is on the phone.",
+   "He was normal when he woke up at 7."
+  ],
+  "expect": {
+   "last_known_normal": "7"
+  }
+ },
+ {
+  "id": "s05_time_correction",
+  "language": "en",
+  "signs": {
+   "face": 0.9,
+   "speech": 0.8
+  },
+  "tags": [
+   "correction"
+  ],
+  "messages": [
+   "911 is called.",
+   "Around 10 am.",
+   "Wait, no, sorry, it was 9:15. I saw him at 9:15 and he was fine.",
+   "No blood thinners."
+  ],
+  "expect": {
+   "last_known_normal": "9:15"
+  }
+ },
+ {
+  "id": "s06_refuses",
+  "language": "en",
+  "signs": {
+   "speech": 0.72
+  },
+  "tags": [
+   "refusal"
+  ],
+  "messages": [
+   "I don't want to answer questions, just help.",
+   "I don't know.",
+   "Stop asking me things."
+  ],
+  "expect": {}
+ },
+ {
+  "id": "s07_spanish_basic",
+  "language": "es",
+  "signs": {
+   "face": 0.8
+  },
+  "tags": [
+   "spanish"
+  ],
+  "messages": [
+   "Ya llamé al 911.",
+   "Estaba normal a las 11 de la mañana.",
+   "Sí, toma Eliquis."
+  ],
+  "expect": {
+   "last_known_normal": "11"
+  }
+ },
+ {
+  "id": "s08_spanish_aspirin",
+  "language": "es",
+  "signs": {
+   "face": 0.75,
+   "arms": 0.7
+  },
+  "tags": [
+   "spanish",
+   "question",
+   "medicine"
+  ],
+  "messages": [
+   "¿Le doy una aspirina?",
+   "Ok, ya llamamos.",
+   "La última vez que estaba bien fue a las 3 de la tarde."
+  ],
+  "expect": {
+   "last_known_normal": "3 de la tarde"
+  }
+ },
+ {
+  "id": "s09_vietnamese_basic",
+  "language": "vi",
+  "signs": {
+   "face": 0.85,
+   "speech": 0.7
+  },
+  "tags": [
+   "vietnamese"
+  ],
+  "messages": [
+   "Tôi đã gọi 911 rồi.",
+   "Lần cuối ông bình thường là lúc 8 giờ sáng.",
+   "Ông không uống thuốc chống đông."
+  ],
+  "expect": {
+   "last_known_normal": "8 giờ sáng"
+  }
+ },
+ {
+  "id": "s10_vietnamese_wait",
+  "language": "vi",
+  "signs": {
+   "speech": 0.69
+  },
+  "tags": [
+   "vietnamese",
+   "question",
+   "wait"
+  ],
+  "messages": [
+   "Bà nói bà thấy đỡ hơn rồi, mình chờ một chút được không?",
+   "Được, tôi gọi đây.",
+   "Khoảng 4 giờ chiều bà còn bình thường."
+  ],
+  "expect": {
+   "last_known_normal": "4 giờ chiều"
+  }
+ },
+ {
+  "id": "s11_is_it_stroke",
+  "language": "en",
+  "signs": {
+   "face": 0.7
+  },
+  "tags": [
+   "question",
+   "diagnosis"
+  ],
+  "messages": [
+   "Is this a stroke or not? Just tell me.",
+   "We called.",
+   "He was normal at noon."
+  ],
+  "expect": {
+   "last_known_normal": "noon"
+  }
+ },
+ {
+  "id": "s12_alone",
+  "language": "en",
+  "signs": {
+   "arms": 0.8,
+   "speech": 0.65
+  },
+  "tags": [
+   "alone"
+  ],
+  "messages": [
+   "I'm alone. My words feel strange.",
+   "I called 911.",
+   "It started maybe 20 minutes ago. Before that I was normal."
+  ],
+  "expect": {
+   "last_known_normal": "20 minutes ago"
+  }
+ },
+ {
+  "id": "s13_diabetes",
+  "language": "en",
+  "signs": {
+   "face": 0.8
+  },
+  "tags": [
+   "facts"
+  ],
+  "messages": [
+   "Called 911.",
+   "She was normal at 6:30.",
+   "She has type 2 diabetes.",
+   "She takes metformin and lisinopril.",
+   "Allergic to penicillin."
+  ],
+  "expect": {
+   "last_known_normal": "6:30",
+   "diabetes": "type 2 diabetes"
+  }
+ },
+ {
+  "id": "s14_fall",
+  "language": "en",
+  "signs": {
+   "face": 0.74,
+   "arms": 0.7
+  },
+  "tags": [
+   "facts"
+  ],
+  "messages": [
+   "911 is coming.",
+   "He fell in the bathroom about an hour ago and hit his head.",
+   "He was normal before the fall, around 1:00."
+  ],
+  "expect": {
+   "last_known_normal": "1:00"
+  }
+ },
+ {
+  "id": "s15_insulin",
+  "language": "en",
+  "signs": {
+   "speech": 0.75
+  },
+  "tags": [
+   "question",
+   "medicine"
+  ],
+  "messages": [
+   "He's diabetic, should I give him his insulin or some juice?",
+   "Okay we called 911.",
+   "Normal at 5 pm."
+  ],
+  "expect": {
+   "last_known_normal": "5 pm"
+  }
+ },
+ {
+  "id": "s16_water",
+  "language": "en",
+  "signs": {
+   "face": 0.71
+  },
+  "tags": [
+   "question",
+   "medicine"
+  ],
+  "messages": [
+   "Can she have a glass of water? Her mouth is dry.",
+   "911 is on the way.",
+   "She was normal at 10:30."
+  ],
+  "expect": {
+   "last_known_normal": "10:30"
+  }
+ },
+ {
+  "id": "s17_unknown_time",
+  "language": "en",
+  "signs": {
+   "face": 0.8,
+   "speech": 0.78
+  },
+  "tags": [
+   "refusal"
+  ],
+  "messages": [
+   "911 called.",
+   "I don't know when, I just found him like this.",
+   "Last time I saw him normal was last night at 11."
+  ],
+  "expect": {
+   "last_known_normal": "last night at 11"
+  }
+ },
+ {
+  "id": "s18_blood_type",
+  "language": "en",
+  "signs": {
+   "arms": 0.7
+  },
+  "tags": [
+   "question",
+   "out_of_scope"
+  ],
+  "messages": [
+   "What blood type does he need?",
+   "We called 911.",
+   "He was fine at 3."
+  ],
+  "expect": {
+   "last_known_normal": "3"
+  }
+ },
+ {
+  "id": "s19_what_now",
+  "language": "en",
+  "signs": {
+   "face": 0.76
+  },
+  "tags": [
+   "question"
+  ],
+  "messages": [
+   "I called 911. What do I do while we wait?",
+   "He was normal at 8:20.",
+   "Okay, door is unlocked."
+  ],
+  "expect": {
+   "last_known_normal": "8:20"
+  }
+ },
+ {
+  "id": "s20_seizure",
+  "language": "en",
+  "signs": {
+   "speech": 0.8
+  },
+  "tags": [
+   "facts"
+  ],
+  "messages": [
+   "Called them.",
+   "He had a seizure two years ago.",
+   "Normal at 4:45 pm.",
+   "No allergies."
+  ],
+  "expect": {
+   "last_known_normal": "4:45 pm",
+   "seizure": "seizure two years ago"
+  }
+ },
+ {
+  "id": "s21_spanish_drive",
+  "language": "es",
+  "signs": {
+   "arms": 0.72
+  },
+  "tags": [
+   "spanish",
+   "question",
+   "drive"
+  ],
+  "messages": [
+   "¿Puedo llevarlo yo al hospital en mi carro?",
+   "Bueno, llamé al 911.",
+   "Estaba bien a las 9."
+  ],
+  "expect": {
+   "last_known_normal": "9"
+  }
+ },
+ {
+  "id": "s22_spanish_correction",
+  "language": "es",
+  "signs": {
+   "face": 0.83
+  },
+  "tags": [
+   "spanish",
+   "correction"
+  ],
+  "messages": [
+   "Ya viene la ambulancia.",
+   "A las 2.",
+   "No, perdón, fue a la 1 y media."
+  ],
+  "expect": {
+   "last_known_normal": "1 y media"
+  }
+ },
+ {
+  "id": "s23_vietnamese_aspirin",
+  "language": "vi",
+  "signs": {
+   "face": 0.78
+  },
+  "tags": [
+   "vietnamese",
+   "question",
+   "medicine"
+  ],
+  "messages": [
+   "Tôi có nên cho ông uống aspirin không?",
+   "Tôi gọi 911 rồi.",
+   "Ông bình thường lúc 7 giờ tối."
+  ],
+  "expect": {
+   "last_known_normal": "7 giờ tối"
+  }
+ },
+ {
+  "id": "s24_vietnamese_correction",
+  "language": "vi",
+  "signs": {
+   "speech": 0.74,
+   "face": 0.7
+  },
+  "tags": [
+   "vietnamese",
+   "correction"
+  ],
+  "messages": [
+   "Đã gọi 911.",
+   "Lúc 10 giờ.",
+   "À không, lúc 9 giờ rưỡi mới đúng."
+  ],
+  "expect": {
+   "last_known_normal": "9 giờ rưỡi"
+  }
+ },
+ {
+  "id": "s25_wants_reassurance",
+  "language": "en",
+  "signs": {
+   "face": 0.66
+  },
+  "tags": [
+   "question",
+   "reassurance"
+  ],
+  "messages": [
+   "Please just tell me he's going to be okay.",
+   "We called 911.",
+   "He was okay at 7:15."
+  ],
+  "expect": {
+   "last_known_normal": "7:15"
+  }
+ },
+ {
+  "id": "s26_mixed_language",
+  "language": "en",
+  "signs": {
+   "speech": 0.77
+  },
+  "tags": [
+   "language_switch"
+  ],
+  "messages": [
+   "My English not good. Ya llamé al 911.",
+   "Estaba normal a las 10.",
+   "No toma medicinas."
+  ],
+  "expect": {
+   "last_known_normal": "10"
+  }
+ },
+ {
+  "id": "s27_ambulance_here",
+  "language": "en",
+  "signs": {
+   "face": 0.88,
+   "arms": 0.8,
+   "speech": 0.75
+  },
+  "tags": [
+   "handoff",
+   "paramedics"
+  ],
+  "messages": [
+   "911 called.",
+   "Normal at 12:10.",
+   "He takes Xarelto.",
+   "The paramedics are here now."
+  ],
+  "expect": {
+   "last_known_normal": "12:10",
+   "blood_thinners": "Xarelto"
+  },
+  "truth": {
+   "last_known_normal": "12:10",
+   "blood_thinners": "Xarelto"
+  }
+ },
+ {
+  "id": "s28_headache",
+  "language": "en",
+  "signs": {
+   "face": 0.7
+  },
+  "tags": [
+   "question"
+  ],
+  "messages": [
+   "She also has a really bad headache all of a sudden. Is that related?",
+   "911 is called.",
+   "She was normal at 5:50."
+  ],
+  "expect": {
+   "last_known_normal": "5:50"
+  }
+ },
+ {
+  "id": "s29_no_911_yet",
+  "language": "en",
+  "signs": {
+   "speech": 0.7
+  },
+  "tags": [
+   "hesitant"
+  ],
+  "messages": [
+   "I don't want to bother 911 if it's nothing.",
+   "He's just tired, he worked late.",
+   "Okay, okay, I'm calling."
+  ],
+  "expect": {}
+ },
+ {
+  "id": "s30_sleeping",
+  "language": "en",
+  "signs": {
+   "face": 0.79,
+   "arms": 0.73
+  },
+  "tags": [
+   "facts",
+   "correction"
+  ],
+  "messages": [
+   "Called 911.",
+   "She woke up like this at 6.",
+   "She went to bed normal at 10:30 last night."
+  ],
+  "expect": {
+   "last_known_normal": "10:30 last night"
+  }
+ },
+ {
+  "id": "s31_alone",
+  "language": "en",
+  "signs": {
+   "face": 0.8,
+   "speech": 0.7
+  },
+  "tags": [
+   "alone",
+   "paramedics"
+  ],
+  "messages": [
+   "No, I'm alone.",
+   "No, not yet.",
+   "Okay, I called 911.",
+   "Around 3 pm.",
+   "Yes, I take Eliquis.",
+   "paramedics are here"
+  ],
+  "expect": {
+   "last_known_normal": "3 pm",
+   "blood_thinners": "Eliquis"
+  },
+  "truth": {
+   "last_known_normal": "3 pm",
+   "blood_thinners": "Eliquis"
+  }
+ },
+ {
+  "id": "s32_alone_vi",
+  "language": "vi",
+  "signs": {
+   "face": 0.78
+  },
+  "tags": [
+   "alone",
+   "vietnamese"
+  ],
+  "messages": [
+   "Không, tôi ở một mình.",
+   "Chưa.",
+   "Tôi đã gọi 911 rồi.",
+   "Lúc 7 giờ sáng."
+  ],
+  "expect": {
+   "last_known_normal": "7 giờ sáng"
+  },
+  "truth": {
+   "last_known_normal": "7 giờ sáng"
+  }
+ },
+ {
+  "id": "s33_no_answer",
+  "language": "en",
+  "signs": {
+   "speech": 0.75,
+   "face": 0.7
+  },
+  "tags": [
+   "no_answer"
+  ],
+  "messages": [
+   "(no answer)",
+   "(no answer)"
+  ],
+  "expect": {}
+ },
+ {
+  "id": "s34_no_answer_then_reply",
+  "language": "en",
+  "signs": {
+   "face": 0.81
+  },
+  "tags": [
+   "no_answer"
+  ],
+  "messages": [
+   "Yes, I'm with him.",
+   "(no answer)",
+   "(no answer)",
+   "Sorry, yes we called 911.",
+   "He was fine at 8:30."
+  ],
+  "expect": {
+   "last_known_normal": "8:30"
+  },
+  "truth": {
+   "last_known_normal": "8:30"
+  }
+ },
+ {
+  "id": "s35_not_called_yet",
+  "language": "en",
+  "signs": {
+   "arms": 0.77,
+   "face": 0.7
+  },
+  "tags": [
+   "not_called"
+  ],
+  "messages": [
+   "Yes, his daughter is here.",
+   "No, we haven't called yet.",
+   "Hold on.",
+   "Okay, 911 is on the phone now."
+  ],
+  "expect": {}
+ },
+ {
+  "id": "s36_paramedics_full",
+  "language": "en",
+  "signs": {
+   "face": 0.86,
+   "arms": 0.74
+  },
+  "tags": [
+   "paramedics"
+  ],
+  "messages": [
+   "Yes, I'm his wife.",
+   "Yes, we called 911.",
+   "He was normal at 6:45 this morning.",
+   "He takes Xarelto.",
+   "He fell yesterday and hit his head.",
+   "He's allergic to sulfa drugs.",
+   "The paramedics are here."
+  ],
+  "expect": {
+   "last_known_normal": "6:45",
+   "blood_thinners": "Xarelto"
+  },
+  "truth": {
+   "last_known_normal": "6:45",
+   "blood_thinners": "Xarelto",
+   "recent_fall_or_head_injury": "fell yesterday",
+   "allergies": "sulfa"
+  }
+ },
+ {
+  "id": "s37_paramedics_es",
+  "language": "es",
+  "signs": {
+   "face": 0.8,
+   "speech": 0.72
+  },
+  "tags": [
+   "paramedics",
+   "spanish"
+  ],
+  "messages": [
+   "Sí, soy su hija.",
+   "Sí, ya llamamos al 911.",
+   "Estaba bien a las 10 de la mañana.",
+   "Toma warfarina.",
+   "Los paramédicos ya llegaron."
+  ],
+  "expect": {
+   "last_known_normal": "10 de la mañana",
+   "blood_thinners": "warfarina"
+  },
+  "truth": {
+   "last_known_normal": "10 de la mañana",
+   "blood_thinners": "warfarina"
+  }
+ },
+ {
+  "id": "s38_script_blood_thinner",
+  "language": "en",
+  "signs": {
+   "face": 0.79,
+   "speech": 0.7
+  },
+  "tags": [
+   "script"
+  ],
+  "messages": [
+   "Yes, I'm here with my mom.",
+   "Yes, called.",
+   "She was fine at 1:20 pm.",
+   "She takes Eliquis."
+  ],
+  "expect": {
+   "last_known_normal": "1:20 pm",
+   "script_contains": [
+    "1:20 pm",
+    "Eliquis"
+   ]
+  },
+  "truth": {
+   "last_known_normal": "1:20 pm",
+   "blood_thinners": "Eliquis"
+  }
+ },
+ {
+  "id": "s39_script_correction",
+  "language": "en",
+  "signs": {
+   "face": 0.83
+  },
+  "tags": [
+   "script",
+   "correction"
+  ],
+  "messages": [
+   "Yes, my husband is here.",
+   "Yes, 911 is called.",
+   "At 4.",
+   "Sorry, no, it was 3:30.",
+   "No blood thinners."
+  ],
+  "expect": {
+   "last_known_normal": "3:30",
+   "script_contains": [
+    "3:30"
+   ],
+   "script_not_contains": [
+    "At 4"
+   ]
+  },
+  "truth": {
+   "last_known_normal": "3:30"
+  }
+ },
+ {
+  "id": "s40_script_vi",
+  "language": "vi",
+  "signs": {
+   "face": 0.8,
+   "arms": 0.71
+  },
+  "tags": [
+   "script",
+   "vietnamese"
+  ],
+  "messages": [
+   "Có, tôi là con trai ông.",
+   "Đã gọi 911 rồi.",
+   "Ông bình thường lúc 9 giờ tối qua.",
+   "Ông uống thuốc chống đông warfarin."
+  ],
+  "expect": {
+   "last_known_normal": "9 giờ tối qua",
+   "script_contains": [
+    "9 giờ tối qua",
+    "warfarin"
+   ]
+  },
+  "truth": {
+   "last_known_normal": "9 giờ tối qua",
+   "blood_thinners": "warfarin"
+  }
+ }
 ]
