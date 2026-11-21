@@ -92,8 +92,10 @@
             <input id="family-message" maxlength="1500" placeholder="Or type your answer" autocomplete="off" aria-label="Your answer">
             <button class="primary">Send</button>
             <button id="talk" type="button" hidden>Tap to talk</button>
+            <button id="pause-mic" type="button" hidden>Pause microphone</button>
             <button id="send-voice" type="button" hidden>Send voice reply <kbd>Space / Enter</kbd></button>
           </form>
+          <p id="mic-paused" role="status" hidden>Microphone paused. You can still type a reply.</p>
           <p id="voice-review" role="status" hidden></p>
           <ol id="conversation-log" aria-label="Conversation"></ol>
           <div id="script-card" class="card-911" hidden>

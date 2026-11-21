@@ -373,6 +373,7 @@ const VOICE_FINALIZE_MS = 900
 const VOICE_REVIEW_MS = 5000
 const NO_ANSWER_MS = 20000
 let micBlocked = false
+let micPaused = false
 let busy = false
 let incidentId
 let locationWatch
@@ -388,6 +389,7 @@ function resetEmergency() {
   if (locationWatch !== undefined) navigator.geolocation?.clearWatch(locationWatch)
   locationWatch = undefined
   busy = false
+  micPaused = false
   stopListening()
   stopVoice()
   clearInterval(lastNormalTimer)
@@ -472,6 +474,31 @@ async function speakThenListen(text, session) {
 
 $("#replay-agent").onclick = () => speakThenListen($("#agent-say").textContent, agentState?.session)
 
+function updateMicControls() {
+  const available = Boolean(SpeechInput && agentState)
+  const toggle = $("#pause-mic")
+  toggle.hidden = !available
+  toggle.textContent = micPaused ? "Resume microphone" : "Pause microphone"
+  $("#mic-paused").hidden = !available || !micPaused
+  $("#talk").hidden = !available || micPaused || Boolean(listening) || busy
+}
+
+$("#pause-mic").onclick = () => {
+  if (micPaused) {
+    micPaused = false
+    micBlocked = false
+    stopVoice()
+    startListening(true)
+    return
+  }
+  const input = $("#family-message")
+  if (listening && !input.value.trim()) {
+    input.value = $("#live-transcript").textContent.trim().slice(0, input.maxLength)
+  }
+  micPaused = true
+  stopListening()
+}
+
 function stopListening() {
   clearTimeout(silenceTimer)
   clearTimeout(reviewTimer)
@@ -483,12 +510,12 @@ function stopListening() {
   $("#send-voice").disabled = false
   recognition?.abort()
   $("#mic-indicator").hidden = true
-  $("#talk").hidden = !(SpeechInput && agentState)
+  updateMicControls()
 }
 
 function startListening(requested = false) {
-  if (!SpeechInput || micBlocked || busy || (!requested && $("#family-message").value.trim())) {
-    $("#talk").hidden = !SpeechInput
+  if (!SpeechInput || micPaused || micBlocked || busy || (!requested && $("#family-message").value.trim())) {
+    updateMicControls()
     return
   }
   stopListening()
@@ -503,7 +530,7 @@ function startListening(requested = false) {
   $("#mic-indicator").hidden = false
   $("#mic-label").textContent = "Listening…"
   $("#live-transcript").textContent = ""
-  $("#talk").hidden = true
+  updateMicControls()
   $("#send-voice").hidden = false
 
   function finishTranscript() {
@@ -668,19 +695,30 @@ async function sendMessage(text) {
   stopListening()
   stopVoice()
   const run = emergencyRun
-  addLine("family", text)
+  if (text !== "(no answer)") addLine("family", text)
   $("#mic-indicator").hidden = false
   $("#mic-label").textContent = "Nemotron is thinking…"
   $("#live-transcript").textContent = ""
   try {
     const response = await api("/api/agent/message", { text, state: { session: agentState.session }, language: language() })
+    if (run !== emergencyRun) return
     busy = false
-    if (run === emergencyRun) updateAgent(response, run)
-  } catch {
-    busy = false
-    if (run === emergencyRun) {
+    if (text === "(no answer)" && micPaused) {
+      agentState = response.state
       $("#mic-indicator").hidden = true
-      $("#agent-say").textContent = "The assistant could not respond. Call 911 now and follow the dispatcher’s instructions."
+      updateMicControls()
+    } else {
+      updateAgent(response, run)
+    }
+  } catch {
+    if (run !== emergencyRun) return
+    busy = false
+    $("#mic-indicator").hidden = true
+    updateMicControls()
+    if (text !== "(no answer)" || !micPaused) {
+      $("#agent-say").textContent = agentState?.call_confirmed
+        ? "The assistant could not respond. Follow the dispatcher’s instructions."
+        : "The assistant could not respond. Call 911 now and follow the dispatcher’s instructions."
     }
   }
 }
