@@ -82,44 +82,39 @@
           <div><h2>Trusted contact emails</h2><p id="alert-status" role="status" tabindex="-1"></p></div>
           <button id="cancel-alert" type="button">Cancel email alerts</button>
         </div>
-        <div class="emergency-grid">
-          <div class="conversation">
-            <div class="assistant-heading">
-              <h3>Emergency assistant</h3>
-              <label>Language <select id="agent-language"><option value="en">English</option><option value="es">Español</option><option value="vi">Tiếng Việt</option></select></label>
-            </div>
-            <div class="agent-message">
-              <p id="agent-say" role="status" aria-live="polite"></p>
-              <button id="replay-agent" type="button" hidden>Replay aloud</button>
-            </div>
-            <p id="mic-indicator" hidden><span class="mic-dot" aria-hidden="true"></span><strong id="mic-label">Listening…</strong> <span id="live-transcript"></span></p>
-            <form id="agent-reply">
-              <input id="family-message" maxlength="1500" placeholder="Or type your answer" autocomplete="off" aria-label="Your answer">
-              <button class="primary">Send</button>
-              <button id="talk" type="button" hidden>Tap to talk</button>
-            </form>
-            <ol id="conversation-log" aria-label="Conversation"></ol>
-            <div id="script-card" class="card-911" hidden>
-              <h3>Read this to 911</h3>
-              <p id="script-911"></p>
-            </div>
-            <button id="paramedics-here" type="button">Paramedics are here</button>
-            <div id="handoff-card">
-              <div class="handoff-top">
-                <h3>Paramedic handoff</h3>
-                <span id="verified-badge" hidden>Checked by Nemotron Super ✓</span>
-                <button id="close-handoff" type="button" hidden>Close</button>
-              </div>
-              <p id="last-normal">Last known normal time is unknown.</p>
-              <dl id="handoff"></dl>
-              <p id="removed-facts" hidden></p>
-              <a id="print-handoff" target="_blank" rel="noopener" hidden>Printable handoff</a>
-            </div>
+        <div class="conversation">
+          <div class="assistant-heading">
+            <h3>Emergency assistant</h3>
+            <label>Language <select id="agent-language"><option value="en">English</option><option value="es">Español</option><option value="vi">Tiếng Việt</option></select></label>
           </div>
-          <aside id="console" aria-label="Nemotron agent console">
-            <div class="console-top"><h3>Nemotron agent console</h3><span id="model-badge">waiting…</span></div>
-            <ol id="steps"></ol>
-          </aside>
+          <div class="agent-message">
+            <p id="agent-say" role="status" aria-live="polite"></p>
+            <button id="replay-agent" type="button" hidden>Replay aloud</button>
+          </div>
+          <p id="mic-indicator" hidden><span class="mic-dot" aria-hidden="true"></span><strong id="mic-label">Listening…</strong> <span id="live-transcript"></span></p>
+          <form id="agent-reply">
+            <input id="family-message" maxlength="1500" placeholder="Or type your answer" autocomplete="off" aria-label="Your answer">
+            <button class="primary">Send</button>
+            <button id="talk" type="button" hidden>Tap to talk</button>
+            <button id="send-voice" type="button" hidden>Send voice reply <kbd>Space / Enter</kbd></button>
+          </form>
+          <ol id="conversation-log" aria-label="Conversation"></ol>
+          <div id="script-card" class="card-911" hidden>
+            <h3>Read this to 911</h3>
+            <p id="script-911"></p>
+          </div>
+          <button id="paramedics-here" type="button">Paramedics are here</button>
+          <div id="handoff-card">
+            <div class="handoff-top">
+              <h3>Paramedic handoff</h3>
+              <span id="verified-badge" hidden>Checked by Nemotron Super ✓</span>
+              <button id="close-handoff" type="button" hidden>Close</button>
+            </div>
+            <p id="last-normal">Last known normal time is unknown.</p>
+            <dl id="handoff"></dl>
+            <p id="removed-facts" hidden></p>
+            <a id="print-handoff" target="_blank" rel="noopener" hidden>Printable handoff</a>
+          </div>
         </div>
       </section>
       <button id="retake" type="button" hidden>Retake</button>

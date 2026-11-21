@@ -290,6 +290,10 @@ let voiceGeneration = 0
 let finishVoice
 let listening
 let silenceTimer
+let submitVoice
+const VOICE_PAUSE_MS = 1200
+const VOICE_FINALIZE_MS = 700
+const NO_ANSWER_MS = 20000
 let micBlocked = false
 let busy = false
 let incidentId
@@ -314,9 +318,7 @@ function resetEmergency() {
   $("#last-normal").textContent = "Last known normal time is unknown."
   $("#family-message").value = ""
   $("#conversation-log").replaceChildren()
-  $("#steps").replaceChildren()
   $("#handoff").replaceChildren()
-  $("#model-badge").textContent = "waiting…"
   $("#script-card").hidden = true
   $("#verified-badge").hidden = true
   $("#removed-facts").hidden = true
@@ -396,6 +398,9 @@ function stopListening() {
   clearTimeout(silenceTimer)
   const recognition = listening
   listening = undefined
+  submitVoice = undefined
+  $("#send-voice").hidden = true
+  $("#send-voice").disabled = false
   recognition?.abort()
   $("#mic-indicator").hidden = true
   $("#talk").hidden = !(SpeechInput && agentState)
@@ -409,6 +414,7 @@ function startListening() {
   stopListening()
   const recognition = new SpeechInput()
   let heard = ""
+  let finishing = false
   listening = recognition
   recognition.lang = SPEECH_LANG[language()]
   recognition.continuous = false
@@ -417,6 +423,28 @@ function startListening() {
   $("#mic-label").textContent = "Listening…"
   $("#live-transcript").textContent = ""
   $("#talk").hidden = true
+  $("#send-voice").hidden = false
+
+  function sendHeard() {
+    if (listening !== recognition) return
+    stopListening()
+    if (heard) sendMessage(heard)
+  }
+
+  submitVoice = () => {
+    if (listening !== recognition || finishing) return
+    finishing = true
+    $("#mic-label").textContent = "Finishing voice reply…"
+    $("#send-voice").disabled = true
+    clearTimeout(silenceTimer)
+    silenceTimer = setTimeout(sendHeard, VOICE_FINALIZE_MS)
+    try {
+      recognition.stop()
+    } catch {
+      sendHeard()
+    }
+  }
+
   silenceTimer = setTimeout(() => {
     if (listening !== recognition) return
     if (agentState?.paramedics_here) {
@@ -425,17 +453,15 @@ function startListening() {
     }
     stopListening()
     sendMessage("(no answer)")
-  }, 20000)
+  }, NO_ANSWER_MS)
   recognition.onresult = (event) => {
     if (listening !== recognition) return
-    clearTimeout(silenceTimer)
-    let interim = ""
-    heard = ""
-    for (const result of event.results) {
-      if (result.isFinal) heard += result[0].transcript
-      else interim += result[0].transcript
+    heard = Array.from(event.results, (result) => result[0].transcript.trim()).join(" ").trim()
+    $("#live-transcript").textContent = heard
+    if (!finishing && heard) {
+      clearTimeout(silenceTimer)
+      silenceTimer = setTimeout(submitVoice, VOICE_PAUSE_MS)
     }
-    $("#live-transcript").textContent = `${heard} ${interim}`.trim()
   }
   recognition.onerror = (event) => {
     if (event.error === "not-allowed" || event.error === "service-not-allowed") {
@@ -445,10 +471,8 @@ function startListening() {
   }
   recognition.onend = () => {
     if (listening !== recognition) return
-    const text = heard.trim()
-    if (text) {
-      stopListening()
-      sendMessage(text)
+    if (heard || finishing) {
+      sendHeard()
       return
     }
     if (micBlocked) {
@@ -474,6 +498,15 @@ $("#talk").onclick = () => {
   startListening()
 }
 
+$("#send-voice").onclick = () => submitVoice?.()
+document.addEventListener("keydown", (event) => {
+  if (!submitVoice || event.defaultPrevented || event.isComposing || event.repeat) return
+  if (event.key !== " " && event.key !== "Enter") return
+  if (event.target.closest?.("input, textarea, select, button, a, [contenteditable]")) return
+  event.preventDefault()
+  submitVoice()
+})
+
 function addLine(role, text) {
   if (!text) return
   const item = document.createElement("li")
@@ -481,39 +514,6 @@ function addLine(role, text) {
   item.textContent = text
   $("#conversation-log").append(item)
   item.scrollIntoView({ block: "nearest" })
-}
-
-function shortArgs(args) {
-  const text = JSON.stringify(args ?? {})
-  return text === "{}" ? "" : text.length > 70 ? `${text.slice(0, 70)}…` : text
-}
-
-function renderSteps(steps) {
-  const list = $("#steps")
-  if (list.children.length) {
-    const divider = document.createElement("li")
-    divider.className = "turn"
-    divider.textContent = "next turn"
-    list.append(divider)
-  }
-  for (const step of steps) {
-    const item = document.createElement("li")
-    if (step.blocked_by_safety) item.classList.add("blocked")
-    if (step.by === "code") item.classList.add("code")
-    const name = document.createElement("strong")
-    name.textContent = step.tool
-    const args = document.createElement("code")
-    args.textContent = shortArgs(step.args)
-    const result = document.createElement("span")
-    result.className = "step-result"
-    result.textContent = step.blocked_by_safety ? `blocked by safety → ${step.replaced_with}` : `→ ${step.result}`
-    const meta = document.createElement("span")
-    meta.className = "step-meta"
-    meta.textContent = [step.ms != null ? `${step.ms} ms` : null, step.by === "code" ? "rule in code" : `reasoning ${step.reasoning ? "on" : "off"}`].filter(Boolean).join(" · ")
-    item.append(name, " ", args, " ", result, meta)
-    list.append(item)
-  }
-  list.scrollTop = list.scrollHeight
 }
 
 function renderHandoff(response) {
@@ -557,8 +557,6 @@ function updateAgent(response, run) {
   addLine("agent", response.say)
   $("#agent-say").textContent = response.say ?? ""
   $("#replay-agent").hidden = !response.say
-  $("#model-badge").textContent = response.model ?? "fixed script"
-  renderSteps(response.steps ?? [])
   $("#script-card").hidden = !response.script_911
   $("#script-911").textContent = response.script_911 ?? ""
   renderHandoff(response)
