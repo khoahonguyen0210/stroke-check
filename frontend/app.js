@@ -284,28 +284,59 @@ $("#contacts-test").onclick = async (event) => {
 
 let emergencyRun = 0
 let agentState
+let activeQuestion
 let lastNormalTimer
 let alertPending = false
 
 function resetEmergency() {
   emergencyRun += 1
   agentState = undefined
+  activeQuestion = undefined
+  window.speechSynthesis?.cancel()
   clearInterval(lastNormalTimer)
   $("#emergency").hidden = true
   $("#agent-say").textContent = ""
   $("#last-normal").textContent = "Last known normal time is unknown."
-  $("#agent-answer").reset()
-  $("#agent-answer button").disabled = true
+  for (const form of [$("#agent-answer"), $("#agent-care")]) {
+    form.reset()
+    form.hidden = true
+  }
+  $("#replay-agent").hidden = true
   $("#agent-actions").replaceChildren()
   $("#handoff").replaceChildren()
   $("#print-handoff").hidden = true
 }
 
+function readAloud(text) {
+  if (!window.speechSynthesis || !text) return
+  const voice = new SpeechSynthesisUtterance(text.replaceAll("911", "nine one one"))
+  voice.lang = "en-US"
+  window.speechSynthesis.speak(voice)
+}
+
+function showAgentMessage(text, displayedAsQuestion = false) {
+  const message = $("#agent-say")
+  const replay = $("#replay-agent")
+  message.textContent = text
+  message.hidden = displayedAsQuestion
+  replay.hidden = !window.speechSynthesis || !text
+  message.parentElement.hidden = message.hidden && replay.hidden
+  readAloud(text)
+}
+
+$("#replay-agent").onclick = () => {
+  window.speechSynthesis?.cancel()
+  readAloud($("#agent-say").textContent)
+}
+
 function updateAgent(response, run) {
   if (run !== emergencyRun) return
   agentState = response.state
-  $("#agent-answer button").disabled = false
-  $("#agent-say").textContent = response.say ?? ""
+  activeQuestion = response.question
+  $("#agent-answer").hidden = !activeQuestion
+  $("#agent-question").textContent = activeQuestion?.prompt ?? ""
+  $("#agent-care").hidden = !agentState?.session
+  showAgentMessage(response.say ?? "", response.say === activeQuestion?.prompt)
   const handoff = response.handoff ?? {}
   const facts = handoff.facts ?? {}
   const known = facts.last_known_normal ?? agentState?.timer?.last_known_normal
@@ -323,7 +354,8 @@ function updateAgent(response, run) {
   if (Number.isFinite(knownAt)) lastNormalTimer = setInterval(timer, 1000)
 
   $("#handoff").replaceChildren()
-  const entries = { ...handoff.signs, ...facts }
+  const entries = { ...facts }
+  for (const name of Object.keys(handoff.signs ?? {})) entries[name === "face" ? "facial_asymmetry" : name === "arms" ? "arm_drift" : name] = "Possible sign"
   if (handoff.check_time) entries.check_time = handoff.check_time
   for (const [key, value] of Object.entries(entries)) {
     if (value == null) continue
@@ -349,31 +381,44 @@ async function startEmergency(result) {
   $("#emergency").hidden = false
   const user = $("#name").value.trim()
   startAlertCountdown(user, result)
-  $("#agent-say").textContent = "Call 911 now and follow the dispatcher’s instructions."
+  showAgentMessage("Call 911 now and follow the dispatcher’s instructions.")
   try {
-    updateAgent(await api("/api/agent/start", { result: { ...result, user }, language: "en" }), run)
+    updateAgent(await api("/api/agent/start", { result: { ...result, user }, guided: true }), run)
   } catch {
-    if (run === emergencyRun) $("#agent-say").textContent = "Call 911 now and follow the dispatcher’s instructions. Tell them when the person was last acting normally."
+    if (run === emergencyRun) showAgentMessage("Tell the 911 dispatcher when the person was last seen acting normally.")
   }
 }
 
-$("#agent-answer").onsubmit = async (event) => {
-  event.preventDefault()
+async function sendAgentMessage(kind, input) {
   if (!agentState) return
   const run = emergencyRun
-  const input = $("#family-message")
-  const text = input.value.trim()
-  if (!text) return
-  const button = $("#agent-answer button")
-  button.disabled = true
+  const text = kind === "skip" ? "" : input.value.trim()
+  if (!text && kind !== "skip") return
+  const controls = [...$("#agent-answer").elements, ...$("#agent-care").elements]
+  controls.forEach((control) => { control.disabled = true })
   try {
-    updateAgent(await api("/api/agent/message", { text, state: agentState, language: "en" }), run)
-    if (run === emergencyRun) input.value = ""
-  } catch {
-    if (run === emergencyRun) $("#agent-say").textContent = "The assistant could not respond. Follow the 911 dispatcher’s instructions."
+    const response = await api("/api/agent/message", {
+      kind, text, field: activeQuestion?.field, state: { session: agentState.session },
+    })
+    if (run === emergencyRun) {
+      input.value = ""
+      updateAgent(response, run)
+    }
+  } catch (error) {
+    if (run === emergencyRun) showAgentMessage("The assistant could not respond. Follow the 911 dispatcher’s instructions.")
   } finally {
-    if (run === emergencyRun) button.disabled = false
+    controls.forEach((control) => { control.disabled = false })
   }
+}
+
+$("#agent-answer").onsubmit = (event) => {
+  event.preventDefault()
+  sendAgentMessage("answer", $("#family-message"))
+}
+$("#skip-question").onclick = () => sendAgentMessage("skip", $("#family-message"))
+$("#agent-care").onsubmit = (event) => {
+  event.preventDefault()
+  sendAgentMessage("question", $("#care-message"))
 }
 
 function startAlertCountdown(user, result) {

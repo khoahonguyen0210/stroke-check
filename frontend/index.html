@@ -82,16 +82,28 @@
         <button id="cancel-alert" type="button">Cancel email alerts</button>
         <h3>Emergency assistant</h3>
         <p id="last-normal">Last known normal time is unknown.</p>
-        <p id="agent-say" role="status"></p>
-        <form id="agent-answer">
-          <label>Answer <input id="family-message" required maxlength="1500"></label>
-          <button disabled>Send answer</button>
+        <div class="agent-message">
+          <p id="agent-say" role="status"></p>
+          <button id="replay-agent" type="button" hidden>Replay aloud</button>
+        </div>
+        <form id="agent-answer" hidden>
+          <label for="family-message" id="agent-question"></label>
+          <input id="family-message" required maxlength="1500" placeholder="Type your answer">
+          <button>Save answer</button>
+          <button id="skip-question" type="button">I don’t know / skip</button>
+        </form>
+        <form id="agent-care" hidden>
+          <label for="care-message">Ask about care while help is on the way</label>
+          <input id="care-message" required maxlength="1500" placeholder="What should I do while waiting?">
+          <button>Ask assistant</button>
         </form>
         <h3>Paramedic handoff</h3>
         <dl id="handoff"></dl>
         <a id="print-handoff" target="_blank" rel="noopener" hidden>Printable handoff</a>
-        <h3>Agent actions</h3>
-        <ol id="agent-actions"></ol>
+        <details>
+          <summary>Agent actions</summary>
+          <ol id="agent-actions"></ol>
+        </details>
       </section>
       <button id="retake" type="button" hidden>Retake</button>
       <button id="back-to-start" type="button">Back to start</button>

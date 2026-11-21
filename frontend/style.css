@@ -76,3 +76,9 @@ dd { margin: 0 0 .5rem; overflow-wrap: anywhere; }
   .masthead { align-items: flex-start; }
   .masthead p { font-size: .9rem; }
 }
+
+.agent-message { padding: .8rem; background: var(--field); border-radius: .6rem; margin-bottom: .65rem; }
+.agent-message p { margin-bottom: .4rem; }
+#agent-answer, #agent-care { padding-block: .55rem; }
+#agent-answer label, #agent-care label { flex-basis: 100%; font-weight: 650; }
+#agent-answer input, #agent-care input { flex: 1 1 15rem; }

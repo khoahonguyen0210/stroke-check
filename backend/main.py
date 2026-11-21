@@ -69,28 +69,53 @@ def agent_response(operation, *args):
         response = {"say": "Call 911 now and follow the dispatcher's instructions.", "actions": [], "handoff": {}, "state": state}
     finally:
         alerts.FOLLOWUP_ALLOWED.reset(token)
+    return save_agent_response(response)
+
+
+def save_agent_response(response):
     session = response["state"].get("session")
     if session is not None:
         AGENT_SESSIONS[str(session)] = (deepcopy(response["state"]), response["handoff"])
     return response
 
-
 @app.post("/api/agent/start")
 def agent_start(payload: dict):
     if not isinstance(payload.get("result"), dict):
         raise HTTPException(422, "Check result is required.")
+    if payload.get("guided") is True:
+        from backend import care
+
+        return save_agent_response(care.start(payload["result"]))
     return agent_response("start", payload["result"], payload.get("language", "en"))
 
 
 @app.post("/api/agent/message")
 def agent_message(payload: dict):
-    if not isinstance(payload.get("state"), dict) or not isinstance(payload.get("text"), str):
+    if not isinstance(payload.get("state"), dict):
         raise HTTPException(422, "Message and agent state are required.")
     session = str(payload["state"].get("session", ""))
     if session not in AGENT_SESSIONS:
         raise HTTPException(404, "Assistant session has expired.")
     state, _ = AGENT_SESSIONS[session]
-    return agent_response("reply", payload["text"], deepcopy(state), payload.get("language", "en"))
+    text = payload.get("text", "")
+    if not isinstance(text, str) or len(text) > 1500:
+        raise HTTPException(422, "Enter a message of up to 1500 characters.")
+    text = text.strip()
+    if state.get("guided"):
+        from backend import care
+
+        next_state = deepcopy(state)
+        kind = payload.get("kind")
+        if kind == "question" and text:
+            return save_agent_response(care.question(next_state, text))
+        if kind in ("answer", "skip") and (text or kind == "skip"):
+            if not state["pending_question"] or payload.get("field") != state["pending_question"]:
+                raise HTTPException(409, "This handoff question has changed.")
+            return save_agent_response(care.answer(next_state, text, kind == "skip"))
+        raise HTTPException(422, "Enter an answer, skip the question, or ask a care question.")
+    if not text:
+        raise HTTPException(422, "Enter a message.")
+    return agent_response("reply", text, deepcopy(state), payload.get("language", "en"))
 
 
 @app.get("/api/agent/handoff/{session}")
@@ -98,7 +123,7 @@ def handoff(session: str):
     from fastapi.responses import PlainTextResponse
 
     if session not in AGENT_SESSIONS:
-        if re.fullmatch(r"[0-9]{8}-[0-9]{6}", session):
+        if re.fullmatch(r"[0-9]{8}-[0-9]{6}(?:-[0-9a-f]{8})?", session):
             path = storage.DATA / "handoffs" / f"{session}.txt"
             if path.is_file():
                 return PlainTextResponse(path.read_text())
