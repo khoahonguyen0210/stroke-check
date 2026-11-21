@@ -74,8 +74,11 @@ def load_env():
 
 
 def location_text(location):
-    if isinstance(location, dict) and location.get("lat") is not None and location.get("lon", location.get("lng")) is not None:
-        return f"https://maps.google.com/?q={location['lat']},{location.get('lon', location.get('lng'))}"
+    if isinstance(location, dict):
+        lat = location.get("lat", location.get("latitude"))
+        lon = location.get("lon", location.get("lng", location.get("longitude")))
+        if lat is not None and lon is not None:
+            return f"https://maps.google.com/?q={lat},{lon}"
     return location if isinstance(location, str) and location else None
 
 

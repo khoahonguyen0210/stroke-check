@@ -123,7 +123,7 @@ def agent_voice(session: str):
     from backend import voice
 
     entry = AGENT_SESSIONS.get(session)
-    if not entry or not entry[0].get("guided"):
+    if not entry:
         raise HTTPException(404, "Voice session not found.")
     turns = entry[0]["conversation"]
     audio = voice.speech(turns[-1]["text"]) if turns and turns[-1]["role"] == "agent" else None

@@ -284,46 +284,48 @@ $("#contacts-test").onclick = async (event) => {
 
 let emergencyRun = 0
 let agentState
-let activeQuestion
-let careRequested = false
 let lastNormalTimer
 let alertPending = false
 let voiceGeneration = 0
-let voiceQueue = Promise.resolve()
 let finishVoice
-let currentVoiceSession
 let listening
+let silenceTimer
+let micBlocked = false
+let busy = false
 const SpeechInput = window.SpeechRecognition || window.webkitSpeechRecognition
+const SPEECH_LANG = { en: "en-US", es: "es-US", vi: "vi-VN" }
+const language = () => $("#agent-language").value
 
 function resetEmergency() {
   emergencyRun += 1
   agentState = undefined
-  activeQuestion = undefined
-  careRequested = false
-  stopDictation()
+  busy = false
+  stopListening()
   stopVoice()
-  currentVoiceSession = undefined
   clearInterval(lastNormalTimer)
   $("#emergency").hidden = true
   $("#agent-say").textContent = ""
   $("#last-normal").textContent = "Last known normal time is unknown."
-  $("#agent-answer").reset()
-  $("#agent-care").reset()
-  $("#care-history").replaceChildren()
-  $("#handoff-panel").open = false
-  updateCareView()
-  $("#replay-agent").hidden = true
-  $("#dictation-status").hidden = true
-  $("#agent-actions").replaceChildren()
+  $("#family-message").value = ""
+  $("#conversation-log").replaceChildren()
+  $("#steps").replaceChildren()
   $("#handoff").replaceChildren()
+  $("#model-badge").textContent = "waiting…"
+  $("#script-card").hidden = true
+  $("#verified-badge").hidden = true
+  $("#removed-facts").hidden = true
   $("#print-handoff").hidden = true
+  $("#replay-agent").hidden = true
+  $("#talk").hidden = true
+  $("#handoff-card").classList.remove("fullscreen")
+  $("#close-handoff").hidden = true
+  $("#paramedics-here").disabled = false
 }
 
 function stopVoice() {
   voiceGeneration += 1
   finishVoice?.()
   window.speechSynthesis?.cancel()
-  voiceQueue = Promise.resolve()
 }
 
 function playBrowserVoice(text) {
@@ -338,9 +340,9 @@ function playBrowserVoice(text) {
     const timeout = setTimeout(() => {
       window.speechSynthesis.cancel()
       end()
-    }, 12000)
+    }, 45000)
     finishVoice = end
-    utterance.lang = "en-US"
+    utterance.lang = SPEECH_LANG[language()]
     utterance.onend = end
     utterance.onerror = end
     window.speechSynthesis.speak(utterance)
@@ -358,7 +360,7 @@ function playClip(blob) {
       if (finishVoice === end) finishVoice = undefined
       resolve(played)
     }
-    const timeout = setTimeout(() => end(false), 20000)
+    const timeout = setTimeout(() => end(false), 45000)
     finishVoice = end
     audio.onended = () => end()
     audio.onerror = () => end(false)
@@ -366,252 +368,273 @@ function playClip(blob) {
   })
 }
 
-function readAloud(text, session) {
-  if (!text) return
-  const generation = voiceGeneration
-  const clip = session
-    ? fetch(`/api/agent/voice/${encodeURIComponent(session)}`, { signal: AbortSignal.timeout?.(5000) })
-      .then((response) => response.ok ? response.blob() : null).catch(() => null)
-    : Promise.resolve(null)
-  voiceQueue = voiceQueue.then(async () => {
-    const audio = await clip
-    if (generation !== voiceGeneration) return
-    if (audio && await playClip(audio)) return
-    if (generation === voiceGeneration) await playBrowserVoice(text)
-  }).catch(() => {})
-}
-
-function showAgentMessage(text, displayedAsQuestion = false, session) {
-  const message = $("#agent-say")
-  const replay = $("#replay-agent")
-  currentVoiceSession = session
-  message.textContent = text
-  message.hidden = displayedAsQuestion
-  replay.hidden = !text || (!session && !window.speechSynthesis)
-  message.parentElement.hidden = message.hidden && replay.hidden
-  readAloud(text, session)
-}
-
-$("#replay-agent").onclick = () => {
-  stopDictation()
+async function speakThenListen(text, session) {
+  stopListening()
   stopVoice()
-  readAloud($("#agent-say").textContent, currentVoiceSession)
+  const generation = voiceGeneration
+  if (text) {
+    const clip = session && language() === "en"
+      ? await fetch(`/api/agent/voice/${encodeURIComponent(session)}`, { signal: AbortSignal.timeout?.(4000) })
+        .then((response) => response.ok ? response.blob() : null).catch(() => null)
+      : null
+    if (generation !== voiceGeneration) return
+    const played = clip && await playClip(clip)
+    if (!played && generation === voiceGeneration) await playBrowserVoice(text)
+  }
+  if (generation === voiceGeneration && agentState && !agentState.paramedics_here) startListening()
 }
 
-function stopDictation() {
-  if (!listening) return
-  const { recognition, reset } = listening
-  reset()
-  recognition.abort()
+$("#replay-agent").onclick = () => speakThenListen($("#agent-say").textContent, agentState?.session)
+
+function stopListening() {
+  clearTimeout(silenceTimer)
+  const recognition = listening
+  listening = undefined
+  recognition?.abort()
+  $("#mic-indicator").hidden = true
+  $("#talk").hidden = !(SpeechInput && agentState)
 }
 
-function dictate(button, input) {
-  if (!SpeechInput) return
-  if (listening?.button === button) {
-    listening.recognition.stop()
+function startListening() {
+  if (!SpeechInput || micBlocked || busy) {
+    $("#talk").hidden = !SpeechInput
     return
   }
-  stopDictation()
-  stopVoice()
+  stopListening()
   const recognition = new SpeechInput()
-  const feedback = $("#dictation-status")
-  const label = button.textContent
-  function reset() {
-    clearTimeout(timeout)
-    if (listening?.recognition !== recognition) return
-    button.textContent = label
-    button.setAttribute("aria-pressed", "false")
-    listening = undefined
-  }
-  const timeout = setTimeout(() => recognition.stop(), 15000)
-  listening = { recognition, button, reset }
-  recognition.lang = "en-US"
+  let heard = ""
+  listening = recognition
+  recognition.lang = SPEECH_LANG[language()]
   recognition.continuous = false
-  recognition.interimResults = false
+  recognition.interimResults = true
+  $("#mic-indicator").hidden = false
+  $("#mic-label").textContent = "Listening…"
+  $("#live-transcript").textContent = ""
+  $("#talk").hidden = true
+  silenceTimer = setTimeout(() => {
+    if (listening !== recognition) return
+    stopListening()
+    sendMessage("(no answer)")
+  }, 20000)
   recognition.onresult = (event) => {
-    if (listening?.recognition !== recognition) return
-    input.value = event.results[0][0].transcript.trim().slice(0, input.maxLength)
-    feedback.textContent = "Review what the browser heard, then send it."
-    input.focus()
+    if (listening !== recognition) return
+    clearTimeout(silenceTimer)
+    let interim = ""
+    heard = ""
+    for (const result of event.results) {
+      if (result.isFinal) heard += result[0].transcript
+      else interim += result[0].transcript
+    }
+    $("#live-transcript").textContent = `${heard} ${interim}`.trim()
   }
-  recognition.onerror = () => {
-    if (listening?.recognition === recognition) feedback.textContent = "Voice input was unavailable. You can type instead."
-    reset()
+  recognition.onerror = (event) => {
+    if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+      micBlocked = true
+      $("#mic-label").textContent = "Microphone blocked. Type your answer."
+    }
   }
   recognition.onend = () => {
-    if (listening?.recognition === recognition && !input.value.trim()) feedback.textContent = "Nothing was transcribed. Try again or type your message."
-    reset()
+    if (listening !== recognition) return
+    const text = heard.trim()
+    if (text) {
+      stopListening()
+      sendMessage(text)
+      return
+    }
+    if (micBlocked) {
+      stopListening()
+      return
+    }
+    try {
+      recognition.start()
+    } catch {
+      stopListening()
+    }
   }
   try {
     recognition.start()
-    button.textContent = "Stop listening"
-    button.setAttribute("aria-pressed", "true")
-    feedback.hidden = false
-    feedback.textContent = "Listening…"
   } catch {
-    feedback.hidden = false
-    recognition.onerror()
+    stopListening()
   }
 }
 
-if (SpeechInput) {
-  $("#dictate-answer").hidden = false
-  $("#dictate-question").hidden = false
-  $("#dictation-note").hidden = false
-  $("#dictate-answer").onclick = (event) => dictate(event.currentTarget, $("#family-message"))
-  $("#dictate-question").onclick = (event) => dictate(event.currentTarget, $("#care-message"))
+$("#talk").onclick = () => {
+  micBlocked = false
+  stopVoice()
+  startListening()
 }
 
-function updateCareView() {
-  const ready = Boolean(agentState?.session)
-  const gathering = ready && Boolean(activeQuestion)
-  const chatOpen = ready && (!gathering || careRequested)
-  const toggle = $("#care-toggle")
-  $("#agent-answer").hidden = !gathering || chatOpen
-  $("#agent-progress").hidden = !gathering || chatOpen
-  $("#care-chat").hidden = !chatOpen
-  $("#care-suggestions").hidden = gathering || $("#care-history").children.length > 0
-  toggle.hidden = !gathering
-  toggle.textContent = chatOpen ? "Back to paramedic questions" : "Ask a question now"
-  toggle.setAttribute("aria-expanded", String(chatOpen))
-}
-
-$("#care-toggle").onclick = () => {
-  stopDictation()
-  $("#dictation-status").hidden = true
-  careRequested = !careRequested
-  updateCareView()
-  $(careRequested ? "#care-message" : "#family-message").focus()
-}
-
-for (const suggestion of $("#care-suggestions").querySelectorAll("button")) {
-  suggestion.onclick = () => {
-    const input = $("#care-message")
-    input.value = suggestion.textContent
-    input.focus()
-  }
-}
-
-function addCareExchange(question, answer) {
+function addLine(role, text) {
+  if (!text) return
   const item = document.createElement("li")
-  const title = document.createElement("strong")
-  const reply = document.createElement("p")
-  title.textContent = question
-  reply.textContent = answer
-  item.append(title, reply)
-  $("#care-history").append(item)
+  item.className = role
+  item.textContent = text
+  $("#conversation-log").append(item)
+  item.scrollIntoView({ block: "nearest" })
 }
 
-function updateAgent(response, run, careQuestion) {
-  if (run !== emergencyRun) return
-  agentState = response.state
-  activeQuestion = response.question
-  $("#agent-question").textContent = activeQuestion?.prompt ?? ""
-  $("#agent-progress").textContent = activeQuestion ? `Paramedic question ${activeQuestion.number} of ${activeQuestion.total}` : ""
-  if (careQuestion) addCareExchange(careQuestion, response.say)
-  updateCareView()
-  showAgentMessage(response.say ?? "", Boolean(careQuestion) || response.say === activeQuestion?.prompt, agentState?.session)
+function shortArgs(args) {
+  const text = JSON.stringify(args ?? {})
+  return text === "{}" ? "" : text.length > 70 ? `${text.slice(0, 70)}…` : text
+}
+
+function renderSteps(steps) {
+  const list = $("#steps")
+  if (list.children.length) {
+    const divider = document.createElement("li")
+    divider.className = "turn"
+    divider.textContent = "next turn"
+    list.append(divider)
+  }
+  for (const step of steps) {
+    const item = document.createElement("li")
+    if (step.blocked_by_safety) item.classList.add("blocked")
+    if (step.by === "code") item.classList.add("code")
+    const name = document.createElement("strong")
+    name.textContent = step.tool
+    const args = document.createElement("code")
+    args.textContent = shortArgs(step.args)
+    const result = document.createElement("span")
+    result.className = "step-result"
+    result.textContent = step.blocked_by_safety ? `blocked by safety → ${step.replaced_with}` : `→ ${step.result}`
+    const meta = document.createElement("span")
+    meta.className = "step-meta"
+    meta.textContent = [step.ms != null ? `${step.ms} ms` : null, step.by === "code" ? "rule in code" : `reasoning ${step.reasoning ? "on" : "off"}`].filter(Boolean).join(" · ")
+    item.append(name, " ", args, " ", result, meta)
+    list.append(item)
+  }
+  list.scrollTop = list.scrollHeight
+}
+
+function renderHandoff(response) {
   const handoff = response.handoff ?? {}
   const facts = handoff.facts ?? {}
-  const known = facts.last_known_normal ?? agentState?.timer?.last_known_normal
-  const knownAt = typeof known === "string" && /^\d{4}-\d{2}-\d{2}T/.test(known) ? Date.parse(known) : NaN
-  clearInterval(lastNormalTimer)
-  function timer() {
-    if (!known) return
-    const elapsed = Math.max(0, Math.floor((Date.now() - knownAt) / 1000))
-    const minutes = Math.floor(elapsed / 60)
-    $("#last-normal").textContent = Number.isFinite(knownAt)
-      ? `Time since last known normal · ${minutes} min ${elapsed % 60} s`
-      : `Last known normal · ${known}`
-  }
-  timer()
-  if (Number.isFinite(knownAt)) lastNormalTimer = setInterval(timer, 1000)
-
+  const known = facts.last_known_normal
+  $("#last-normal").textContent = known ? `Last known normal (family's words): ${known}` : "Last known normal time is unknown."
   $("#handoff").replaceChildren()
-  const entries = { ...facts }
-  for (const name of Object.keys(handoff.signs ?? {})) entries[name === "face" ? "facial_asymmetry" : name === "arms" ? "arm_drift" : name] = "Possible sign"
-  if (handoff.check_time) entries.check_time = handoff.check_time
+  const entries = {}
+  for (const [name, p] of Object.entries(handoff.signs ?? {})) entries[`sign: ${name}`] = typeof p === "number" ? `possible (p = ${p.toFixed(2)})` : "possible"
+  if (handoff.someone_present) entries["someone present"] = handoff.someone_present
+  if (handoff.called_911) entries["911 called"] = handoff.called_911
+  for (const [key, value] of Object.entries(facts)) if (value != null && key !== "last_known_normal") entries[key] = value
+  if (handoff.check_time) entries["check time"] = handoff.check_time
   for (const [key, value] of Object.entries(entries)) {
-    if (value == null) continue
     const label = document.createElement("dt")
     label.textContent = key.replaceAll("_", " ")
     const detail = document.createElement("dd")
-    detail.textContent = typeof value === "object" ? JSON.stringify(value) : value
+    detail.textContent = value
     $("#handoff").append(label, detail)
+  }
+  $("#verified-badge").hidden = response.verified !== true
+  const removed = response.removed_facts ?? []
+  $("#removed-facts").hidden = !removed.length
+  $("#removed-facts").textContent = removed.length
+    ? `Removed by the Nemotron Super check (no supporting line): ${removed.map((fact) => `${fact.field.replaceAll("_", " ")} = ${fact.value}`).join("; ")}`
+    : ""
+  if (response.verified === false) {
+    $("#removed-facts").hidden = false
+    $("#removed-facts").textContent = "The Nemotron Super check was unavailable. This handoff was not double-checked."
   }
   if (agentState?.session) {
     $("#print-handoff").href = `/api/agent/handoff/${encodeURIComponent(agentState.session)}`
     $("#print-handoff").hidden = false
   }
-  for (const action of response.actions ?? []) {
-    const item = document.createElement("li")
-    item.textContent = (action.tool ?? action.name ?? "Action").replaceAll("_", " ")
-    $("#agent-actions").append(item)
+}
+
+function updateAgent(response, run) {
+  if (run !== emergencyRun) return
+  agentState = response.state
+  addLine("agent", response.say)
+  $("#agent-say").textContent = response.say ?? ""
+  $("#replay-agent").hidden = !response.say
+  $("#model-badge").textContent = response.model ?? "fixed script"
+  renderSteps(response.steps ?? [])
+  $("#script-card").hidden = !response.script_911
+  $("#script-911").textContent = response.script_911 ?? ""
+  renderHandoff(response)
+  speakThenListen(response.say, agentState?.session)
+}
+
+async function sendMessage(text) {
+  if (!agentState || busy || !text) return
+  busy = true
+  stopListening()
+  stopVoice()
+  const run = emergencyRun
+  addLine("family", text)
+  $("#mic-indicator").hidden = false
+  $("#mic-label").textContent = "Nemotron is thinking…"
+  $("#live-transcript").textContent = ""
+  try {
+    const response = await api("/api/agent/message", { text, state: { session: agentState.session }, language: language() })
+    busy = false
+    if (run === emergencyRun) updateAgent(response, run)
+  } catch {
+    busy = false
+    if (run === emergencyRun) {
+      $("#mic-indicator").hidden = true
+      $("#agent-say").textContent = "The assistant could not respond. Call 911 now and follow the dispatcher’s instructions."
+    }
   }
+}
+
+$("#agent-reply").onsubmit = (event) => {
+  event.preventDefault()
+  const input = $("#family-message")
+  const text = input.value.trim()
+  input.value = ""
+  sendMessage(text)
+}
+
+$("#paramedics-here").onclick = async () => {
+  $("#paramedics-here").disabled = true
+  await sendMessage("paramedics are here")
+  $("#handoff-card").classList.add("fullscreen")
+  $("#close-handoff").hidden = false
+}
+
+$("#close-handoff").onclick = () => {
+  $("#handoff-card").classList.remove("fullscreen")
+  $("#close-handoff").hidden = true
+}
+
+function getLocation() {
+  if (!$("#share-location").checked || !navigator.geolocation) return Promise.resolve(undefined)
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => resolve(undefined), 3000)
+    navigator.geolocation.getCurrentPosition(({ coords }) => {
+      clearTimeout(timeout)
+      resolve({ latitude: coords.latitude, longitude: coords.longitude })
+    }, () => {
+      clearTimeout(timeout)
+      resolve(undefined)
+    }, { timeout: 3000 })
+  })
 }
 
 async function startEmergency(result) {
   const run = emergencyRun
   $("#emergency").hidden = false
+  $("#agent-say").textContent = "Call 911 now."
   const user = $("#name").value.trim()
-  startAlertCountdown(user, result)
-  showAgentMessage("Call 911 now and follow the dispatcher’s instructions.")
+  const location = await getLocation()
+  if (run !== emergencyRun) return
+  startAlertCountdown(user, result, location)
   try {
-    updateAgent(await api("/api/agent/start", { result: { ...result, user }, guided: true }), run)
+    const response = await api("/api/agent/start", { result: { ...result, user, name: user, location }, language: language() })
+    updateAgent(response, run)
   } catch {
-    if (run === emergencyRun) showAgentMessage("Tell the 911 dispatcher when the person was last seen acting normally.")
+    if (run === emergencyRun) $("#agent-say").textContent = "Call 911 now and follow the dispatcher’s instructions."
   }
 }
 
-async function sendAgentMessage(kind, input) {
-  if (!agentState) return
-  stopDictation()
-  stopVoice()
-  $("#dictation-status").hidden = true
-  const run = emergencyRun
-  const text = kind === "skip" ? "" : input.value.trim()
-  if (!text && kind !== "skip") return
-  const controls = [...$("#agent-answer").elements, ...$("#agent-care").elements, $("#care-toggle")]
-  controls.forEach((control) => { control.disabled = true })
-  try {
-    const response = await api("/api/agent/message", {
-      kind, text, field: activeQuestion?.field, state: { session: agentState.session },
-    })
-    if (run === emergencyRun) {
-      input.value = ""
-      updateAgent(response, run, kind === "question" ? text : undefined)
-    }
-  } catch (error) {
-    if (run === emergencyRun) showAgentMessage("The assistant could not respond. Follow the 911 dispatcher’s instructions.")
-  } finally {
-    controls.forEach((control) => { control.disabled = false })
-    if (run === emergencyRun) $($("#care-chat").hidden ? "#family-message" : "#care-message").focus()
-  }
-}
-
-$("#agent-answer").onsubmit = (event) => {
-  event.preventDefault()
-  sendAgentMessage("answer", $("#family-message"))
-}
-$("#skip-question").onclick = () => sendAgentMessage("skip", $("#family-message"))
-$("#agent-care").onsubmit = (event) => {
-  event.preventDefault()
-  sendAgentMessage("question", $("#care-message"))
-}
-
-function startAlertCountdown(user, result) {
+function startAlertCountdown(user, result, location) {
   const detectedAt = new Date().toISOString()
   const deadline = Date.now() + 20000
   const cancel = $("#cancel-alert")
   const output = $("#alert-status")
-  let location
   alertPending = true
   cancel.hidden = false
-  if ($("#share-location").checked) {
-    navigator.geolocation?.getCurrentPosition(({ coords }) => {
-      location = { latitude: coords.latitude, longitude: coords.longitude }
-    }, () => {}, { timeout: 10000 })
-  }
   cancel.onclick = () => {
     clearInterval(timer)
     alertPending = false
