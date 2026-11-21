@@ -53,7 +53,7 @@ MEDICINE_WORDS = (
     r"aspirin|aspirina|ibuprofen|ibuprofeno|advil|motrin|tylenol|acetaminophen|paracetamol|nitroglycerin|"
     r"medicine|medication|meds|pill|pills|tablet|tablets|dose|drug|drugs|"
     r"medicina|medicamento|medicamentos|pastilla|pastillas|dosis|"
-    r"thuốc|liều|viên"
+    r"thuốc|liều"
 )
 DOSE = r"\b\d+(\.\d+)?\s*(mg|milligrams?|ml|mcg|units?|tablets?|pills?|viên|miligramos?)\b"
 NEGATION = r"\b(no|not|don'?t|do not|never|avoid|without|nunca|evite|evita|sin|không|đừng|chớ|tránh)\b"
@@ -112,8 +112,14 @@ REPLACEMENT = {
 }
 
 
+DISCLAIMERS = [r"\bnot a diagnosis\b", r"\bno (es )?un diagnóstico\b", r"\bkhông phải (là )?chẩn đoán\b"]
+
+
 def _normalize(text):
-    return re.sub(r"\s+", " ", text.lower().replace("’", "'").replace("‘", "'")).strip()
+    t = re.sub(r"\s+", " ", text.lower().replace("’", "'").replace("‘", "'")).strip()
+    for p in DISCLAIMERS:
+        t = re.sub(p, " ", t)
+    return t
 
 
 def _any(patterns, text):
