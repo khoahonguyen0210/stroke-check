@@ -27,7 +27,7 @@
       <form id="setup">
         <h2>Start a check</h2>
         <label class="name-input">Name <input id="name" required maxlength="80" autocomplete="given-name" placeholder="Enter your name"></label>
-        <label class="name-input">Your phone (optional) <input id="phone" type="tel" maxlength="40" autocomplete="tel" placeholder="Shown to your contacts only if a warning fires"></label>
+        <label class="name-input">Your phone (optional) <input id="phone" type="tel" maxlength="40" autocomplete="tel" placeholder="Enter a callback number" aria-describedby="phone-note"><span id="phone-note">Shared with trusted contacts if a warning fires.</span></label>
         <div class="profile-actions">
           <label><input id="remember-profile" type="checkbox"> Remember my details on this device</label>
           <button id="switch-person" type="button" hidden>Switch person</button>
@@ -70,9 +70,11 @@
       <div id="preview"><video autoplay muted playsinline></video><canvas aria-hidden="true"></canvas></div>
     </section>
     <section id="result" hidden>
-      <h2 id="outcome" tabindex="-1"></h2>
-      <p>This is a warning tool, not a diagnosis. If you suspect a stroke, call 911 now.</p>
-      <p id="retake-reason"></p>
+      <header class="result-heading">
+        <h2 id="outcome" tabindex="-1"></h2>
+        <p>This is a warning tool, not a diagnosis. If you suspect a stroke, call 911 now.</p>
+        <p id="retake-reason"></p>
+      </header>
       <div id="signs"></div>
       <div id="explain-card" hidden>
         <span class="explain-badge" id="explain-badge">Explained by Nemotron</span>
