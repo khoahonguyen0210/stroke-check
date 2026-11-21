@@ -167,6 +167,11 @@ Style: clean and readable first; light retro touches (pixel font for headings, h
 - `POST /api/contacts/{user}` `{name, relationship, email, phone?, consent: true}` → saved list (reject if consent is false)
 - `POST /api/alert` `{user, result, detected_at, location?}` → `{sent: [{name, channel, ok, error?}]}`
 - `POST /api/alert/test/{user}` → sends a clearly labeled test message to every contact
+- `POST /api/incident` `{user, name, phone?, result}` → `{id}`; created when a warning fires (long random id, expires after 24 h, `data/incidents/<id>.json`). `/api/alert` takes `incident` and adds `PUBLIC_BASE_URL/family/<id>` to the email.
+- `POST /api/incident/{id}/location` `{lat, lng, accuracy}` → saves the latest location (the check page sends it every 10 s when location sharing is on).
+- `GET /api/incident/{id}` → `{name, phone, status_timeline, location, destination_hospital, handoff, hospitals, expires_at}`; 404 when expired. Hospitals come from Overpass (15 km) once per incident, cached by area in `data/hospital_cache.json`.
+- `GET /family/{id}` → family live view (`frontend/family.html`): MapLibre + OpenFreeMap map, status timeline from the agent, handoff. The agent's `record_fact(field="destination_hospital")` sets the destination, matched to the closest hospital name.
+- Dev tool: `python scripts/simulate_route.py <incident_id>` posts 30 points from the MSC, one every 2 s.
 
 ## Features and models
 

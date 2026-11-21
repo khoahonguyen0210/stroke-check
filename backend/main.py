@@ -1,15 +1,17 @@
 import json
+import os
 import re
 from copy import deepcopy
 from pathlib import Path
 from threading import Lock
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
-from backend import alerts, fusion, recording, storage
+from backend import alerts, fusion, incident, recording, storage
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -172,6 +174,7 @@ class AlertRequest(BaseModel):
     detected_at: str
     location: dict | None = None
     session: str | None = None
+    incident: str | None = None
 
 
 def validate_user(user):
@@ -200,10 +203,18 @@ def post_contacts(user: str, payload: Contact):
         return storage.save_contacts(user, contacts + [payload.model_dump()])
 
 
+def public_base(request):
+    load_dotenv(ROOT / ".env")
+    return (os.getenv("PUBLIC_BASE_URL") or str(request.base_url)).rstrip("/")
+
+
 @app.post("/api/alert")
-def send_alert(payload: AlertRequest):
+def send_alert(payload: AlertRequest, request: Request):
     validate_user(payload.user)
-    sent = alerts.send(payload.user, payload.result, payload.detected_at, payload.location)
+    link = f"{public_base(request)}/family/{payload.incident}" if payload.incident and incident.load(payload.incident) else None
+    sent = alerts.send(payload.user, payload.result, payload.detected_at, payload.location, link)
+    if link:
+        incident.contacts_alerted(payload.incident, sent)
     session = AGENT_SESSIONS.get(payload.session)
     if session and session[0].get("user") == payload.user and any(item["ok"] for item in sent):
         ALERTED_SESSIONS.add(payload.session)
@@ -222,6 +233,46 @@ def benchmarks():
     if not path.is_file():
         raise HTTPException(404, "Benchmark results are not available yet.")
     return FileResponse(path, media_type="application/json", headers={"Cache-Control": "no-store"})
+
+
+class IncidentRequest(BaseModel):
+    user: str
+    name: str = Field(default="", max_length=80)
+    phone: str | None = Field(default=None, max_length=40)
+    result: dict
+
+
+class LocationUpdate(BaseModel):
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+    accuracy: float | None = Field(default=None, ge=0)
+
+
+@app.post("/api/incident")
+def create_incident(payload: IncidentRequest):
+    validate_user(payload.user)
+    phone = re.sub(r"[^0-9+]", "", payload.phone or "") or None
+    return {"id": incident.create(payload.user, payload.name.strip(), phone, payload.result)}
+
+
+@app.post("/api/incident/{incident_id}/location")
+def incident_location(incident_id: str, payload: LocationUpdate):
+    if not incident.set_location(incident_id, payload.lat, payload.lng, payload.accuracy):
+        raise HTTPException(404, "This link has expired.")
+    return {"ok": True}
+
+
+@app.get("/api/incident/{incident_id}")
+def incident_view(incident_id: str):
+    view = incident.public(incident_id)
+    if not view:
+        raise HTTPException(404, "This link has expired.")
+    return view
+
+
+@app.get("/family/{incident_id}")
+def family_page(incident_id: str):
+    return FileResponse(ROOT / "frontend" / "family.html", headers={"Cache-Control": "no-store"})
 
 
 app.mount("/", StaticFiles(directory=ROOT / "frontend", html=True))

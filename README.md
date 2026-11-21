@@ -81,6 +81,13 @@ Everything in this repository was written during tidalBYTE '26. Outside sources:
 - NHS, "Symptoms of a stroke": https://www.nhs.uk/conditions/stroke/symptoms/
 - The "food, drink and medicine" and "while you wait" sections are our team's safety rules, marked as such in the file.
 
+**Maps (family live view)**
+- MapLibre GL JS (loaded from unpkg) for the map.
+- OpenFreeMap map styles and tiles (`liberty` and `dark`): https://openfreemap.org
+- Map data © OpenStreetMap contributors (ODbL).
+- Overpass API (and its public mirrors) to find hospitals near the person.
+- OSRM demo server (router.project-osrm.org): used once to generate the fixed test route in `scripts/simulate_route.py`.
+
 **Libraries**
 FastAPI, Starlette, Uvicorn, Pydantic, python-multipart, python-dotenv, NumPy, SciPy, scikit-learn, XGBoost, PyTorch, torchaudio, Hugging Face Transformers and Datasets, PyArrow, pandas, faster-whisper, jiwer, soundfile, joblib, the `openai` Python package, google-genai, ffmpeg. MediaPipe Tasks Vision is loaded from jsDelivr. The Pixelify Sans font comes from Google Fonts.
 

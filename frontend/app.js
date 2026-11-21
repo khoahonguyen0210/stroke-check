@@ -292,6 +292,9 @@ let listening
 let silenceTimer
 let micBlocked = false
 let busy = false
+let incidentId
+let locationWatch
+let lastLocationPost = 0
 const SpeechInput = window.SpeechRecognition || window.webkitSpeechRecognition
 const SPEECH_LANG = { en: "en-US", es: "es-US", vi: "vi-VN" }
 const language = () => $("#agent-language").value
@@ -299,6 +302,9 @@ const language = () => $("#agent-language").value
 function resetEmergency() {
   emergencyRun += 1
   agentState = undefined
+  incidentId = undefined
+  if (locationWatch !== undefined) navigator.geolocation?.clearWatch(locationWatch)
+  locationWatch = undefined
   busy = false
   stopListening()
   stopVoice()
@@ -381,7 +387,7 @@ async function speakThenListen(text, session) {
     const played = clip && await playClip(clip)
     if (!played && generation === voiceGeneration) await playBrowserVoice(text)
   }
-  if (generation === voiceGeneration && agentState && !agentState.paramedics_here) startListening()
+  if (generation === voiceGeneration && agentState) startListening()
 }
 
 $("#replay-agent").onclick = () => speakThenListen($("#agent-say").textContent, agentState?.session)
@@ -413,6 +419,10 @@ function startListening() {
   $("#talk").hidden = true
   silenceTimer = setTimeout(() => {
     if (listening !== recognition) return
+    if (agentState?.paramedics_here) {
+      startListening()
+      return
+    }
     stopListening()
     sendMessage("(no answer)")
   }, 20000)
@@ -604,12 +614,29 @@ function getLocation() {
     const timeout = setTimeout(() => resolve(undefined), 3000)
     navigator.geolocation.getCurrentPosition(({ coords }) => {
       clearTimeout(timeout)
-      resolve({ latitude: coords.latitude, longitude: coords.longitude })
+      resolve({ latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy })
     }, () => {
       clearTimeout(timeout)
       resolve(undefined)
     }, { timeout: 3000 })
   })
+}
+
+function postLocation(latitude, longitude, accuracy) {
+  if (!incidentId) return
+  lastLocationPost = Date.now()
+  fetch(`/api/incident/${encodeURIComponent(incidentId)}/location`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ lat: latitude, lng: longitude, accuracy }),
+  }).catch(() => {})
+}
+
+function shareLocation(first) {
+  if (!incidentId || !$("#share-location").checked || !navigator.geolocation) return
+  if (first) postLocation(first.latitude, first.longitude, first.accuracy)
+  locationWatch = navigator.geolocation.watchPosition(({ coords }) => {
+    if (Date.now() - lastLocationPost >= 10000) postLocation(coords.latitude, coords.longitude, coords.accuracy)
+  }, () => {}, { enableHighAccuracy: true, maximumAge: 5000 })
 }
 
 async function startEmergency(result) {
@@ -618,11 +645,16 @@ async function startEmergency(result) {
   $("#emergency").scrollIntoView({ block: "start", behavior: "smooth" })
   $("#agent-say").textContent = "Call 911 now."
   const user = $("#name").value.trim()
-  const location = await getLocation()
+  const [location, created] = await Promise.all([
+    getLocation(),
+    api("/api/incident", { user, name: user, phone: $("#phone").value.trim() || null, result }).catch(() => null),
+  ])
   if (run !== emergencyRun) return
+  incidentId = created?.id
+  shareLocation(location)
   startAlertCountdown(user, result, location)
   try {
-    const response = await api("/api/agent/start", { result: { ...result, user, name: user, location }, language: language() })
+    const response = await api("/api/agent/start", { result: { ...result, user, name: user, location, incident: incidentId }, language: language() })
     updateAgent(response, run)
   } catch {
     if (run === emergencyRun) $("#agent-say").textContent = "Call 911 now and follow the dispatcher’s instructions."
@@ -652,7 +684,7 @@ function startAlertCountdown(user, result, location) {
     cancel.hidden = true
     output.textContent = "Sending alerts…"
     try {
-      const { sent } = await api("/api/alert", { user, result, detected_at: detectedAt, location, session: agentState?.session })
+      const { sent } = await api("/api/alert", { user, result, detected_at: detectedAt, location, session: agentState?.session, incident: incidentId })
       output.textContent = `${new Date().toLocaleTimeString()} · ${deliverySummary(sent)}`
     } catch (error) {
       output.textContent = `Alerts could not be sent. ${error.message}`

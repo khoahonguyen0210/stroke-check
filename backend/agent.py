@@ -24,7 +24,7 @@ LANGUAGES = {"en": "English", "es": "Spanish", "vi": "Vietnamese"}
 NO_ANSWER = r"^\(?\s*no answer\s*\)?$"
 PARAMEDICS = r"paramedic|ambulance is here|ambulance's here|ems is here|they're here|paramédicos|ambulancia (ya )?(está aquí|llegó)|cấp cứu (đã )?(đến|tới)|xe cứu thương (đã )?(đến|tới)"
 
-PROMPT_VERSION = "v4"
+PROMPT_VERSION = "v5"
 SYSTEM = """You are the Stroke Check emergency assistant. A stroke warning check just found possible stroke signs. The app has already shown "Call 911 now."
 You talk with the person, or with the helper next to them, until the paramedics arrive. You act only through tools.
 
@@ -43,6 +43,7 @@ Conversation rules:
 - If the answer is short or unclear, ask again in simpler words instead of guessing.
 - Once last_known_normal is known, call write_911_script.
 - When 911 has been called, call notify_contacts("911 has been called.") once.
+- If they say which hospital the paramedics are taking the person to, call record_fact(field="destination_hospital") with the hospital name exactly as they said it.
 
 Rules:
 - record_fact and start_timer values must be copied word for word from the message. Never guess, infer or rephrase. If they refuse or do not know, record nothing and move on.
@@ -108,6 +109,7 @@ def new_state(result, language):
         "script_911": None,
         "verified": None,
         "removed_facts": [],
+        "incident": result.get("incident") if isinstance(result.get("incident"), str) else None,
     }
 
 
@@ -193,7 +195,9 @@ def fallback(state, actions, reason):
     script = safety.fixed_script(state["language"])
     covered = state["covered"]
     lkn = state["timer"]["last_known_normal"] or state["facts"].get("last_known_normal")
-    if not state["said"]:
+    if state["paramedics_here"]:
+        line = agent_tools.LINES["follow_paramedics"][agent_tools.lang(state)]
+    elif not state["said"]:
         line = script[0] + " " + script[1]
     elif "told_911" not in covered:
         line = script[1]
@@ -248,9 +252,9 @@ def verify_handoff(state, actions):
         by="code", ms=round((time.time() - t0) * 1000), reasoning=True, model=model)
 
 
-def enforce(state, actions, said_before):
+def enforce(state, actions, said_before, handoff_turn):
     l = agent_tools.lang(state)
-    if state["paramedics_here"]:
+    if handoff_turn:
         if not state["handoff_written"]:
             act(actions, "write_handoff", {}, agent_tools.write_handoff(state), by="code")
         if state["verified"] is None:
@@ -261,6 +265,8 @@ def enforce(state, actions, said_before):
         state["said"].append(summary)
         state["timeline"].append({"t": agent_tools.now(), "event": "read the handoff summary out loud"})
         act(actions, "speak", {"text": "(handoff summary)"}, {"ok": True, "said": summary}, by="code", note="family's own words, read to paramedics")
+        return
+    if state["paramedics_here"]:
         return
     if state["no_answer"] >= 2:
         who = state["result"].get("name") or state["user"]
@@ -290,7 +296,8 @@ def run_turn(state, model_name="bolt", reasoning=False, failover=True):
     state["asked_this_turn"] = False
     turn_start = time.time()
     used = model_name
-    if not state["paramedics_here"]:
+    handoff_turn = state["paramedics_here"] and not state["handoff_written"]
+    if not handoff_turn:
         try:
             msgs = messages_for(state)
             for step in range(MAX_STEPS):
@@ -337,7 +344,7 @@ def run_turn(state, model_name="bolt", reasoning=False, failover=True):
         except Exception as error:
             if len(state["said"]) == said_before:
                 fallback(state, actions, f"{type(error).__name__}")
-    enforce(state, actions, said_before)
+    enforce(state, actions, said_before, handoff_turn)
     if len(state["said"]) == said_before:
         fallback(state, actions, "model said nothing")
     say = " ".join(state["said"][said_before:])
@@ -369,6 +376,13 @@ def steps(actions):
 def respond(state, actions, say, model=None):
     state["asked_this_turn"] = False
     handoff = agent_tools.build_handoff(state)
+    if state.get("incident"):
+        try:
+            from backend import incident
+
+            incident.update_from_agent(state["incident"], state, handoff)
+        except Exception:
+            pass
     HANDOFFS.mkdir(parents=True, exist_ok=True)
     (HANDOFFS / f"{state['session']}.txt").write_text(handoff["text"], encoding="utf-8")
     return {"say": say, "actions": actions, "steps": steps(actions), "model": model, "handoff": handoff, "state": state,

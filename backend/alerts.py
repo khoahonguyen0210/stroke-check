@@ -49,7 +49,7 @@ def deliver(user, subject, text):
     return sent
 
 
-def send(user, result, detected_at, location=None):
+def send(user, result, detected_at, location=None, family_link=None):
     names = {"face": "face droop", "arms": "arm drift"}
     signs = ", ".join(label for sign, label in names.items() if result.get("signs", {}).get(sign, {}).get("flag") is True)
     if not signs:
@@ -64,6 +64,8 @@ def send(user, result, detected_at, location=None):
         "They have been told to call 911. Please call them now or call 911 if you can't reach them. "
         f"Location: {where}. {DISCLAIMER}"
     )
+    if family_link:
+        message += f" Live view for family (map, status, paramedic handoff): {family_link}"
     return deliver(user, "Stroke Check warning", message)
 
 

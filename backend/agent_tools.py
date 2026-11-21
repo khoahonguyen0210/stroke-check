@@ -15,7 +15,7 @@ FIELDS = [
     "current_medications",
     "allergies",
 ]
-STATUS_FIELDS = ["someone_present", "called_911"]
+STATUS_FIELDS = ["someone_present", "called_911", "destination_hospital"]
 ALL_FIELDS = STATUS_FIELDS + FIELDS
 
 NO_MATCH = {
@@ -26,6 +26,8 @@ NO_MATCH = {
 
 LINES = {
     "call_911": {"en": "Call 911 now.", "es": "Llame al 911 ahora.", "vi": "Hãy gọi 911 ngay."},
+    "follow_paramedics": {"en": "Follow the paramedics' instructions.", "es": "Siga las instrucciones de los paramédicos.",
+                          "vi": "Hãy làm theo hướng dẫn của nhân viên cấp cứu."},
     "help_coming": {"en": "Help is on the way. Your contacts have been alerted.",
                     "es": "La ayuda está en camino. Sus contactos fueron avisados.",
                     "vi": "Người giúp đang đến. Người thân của bạn đã được báo."},
@@ -102,7 +104,8 @@ def next_step(state):
     covered = state["covered"]
     lkn = state["timer"]["last_known_normal"] or state["facts"].get("last_known_normal")
     if state.get("paramedics_here"):
-        return "the paramedics are here: call write_handoff now, then finish_turn"
+        return ("the paramedics are with the person. If the family says which hospital they are going to, call "
+                "record_fact(field='destination_hospital'). Otherwise speak one short sentence: follow the paramedics' instructions")
     if state.get("no_answer", 0) == 1:
         return "the family did not answer: ask your last question again, in fewer words"
     if state.get("no_answer", 0) >= 2:
