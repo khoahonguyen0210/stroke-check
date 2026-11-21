@@ -184,6 +184,47 @@ def summarize(label, config, scenarios, runs):
     }
 
 
+PLANTS = [("allergies", "blood_thinners"), ("seizure", "last_known_normal"), ("diabetes", "recent_fall_or_head_injury")]
+
+
+def super_check_test(label):
+    import copy
+
+    runs = json.loads((RUNS_DIR / f"{label}_super.json").read_text(encoding="utf-8"))
+    planted = removed_planted = genuine = removed_genuine = failed = 0
+    ms = []
+    for run in runs:
+        state = run["state"]
+        if not state.get("facts_before_check"):
+            continue
+        for target, source in PLANTS:
+            if source not in state["facts_before_check"] or target in state["facts_before_check"]:
+                continue
+            test = copy.deepcopy(state)
+            test["facts"] = dict(state["facts_before_check"])
+            test["facts"][target] = test["facts"][source]
+            test["removed_facts"], test["verified"] = [], None
+            actions = []
+            agent.verify_handoff(test, actions)
+            ms.append(actions[-1]["ms"])
+            if test["verified"] is not True:
+                failed += 1
+                continue
+            gone = {r["field"] for r in test["removed_facts"]}
+            planted += 1
+            removed_planted += target in gone
+            genuine += len(state["facts_before_check"])
+            removed_genuine += len(gone - {target})
+    result = {"label": label, "model": agent.MODELS["super"]["model"], "reasoning": True,
+              "planted_unsupported_facts": planted, "planted_removed": removed_planted,
+              "genuine_facts": genuine, "genuine_removed": removed_genuine, "check_failed": failed,
+              "median_ms": round(statistics.median(ms)) if ms else None}
+    data = json.loads(RESULTS.read_text(encoding="utf-8")) if RESULTS.exists() else {}
+    data.setdefault("agent", {})["super_check_test"] = result
+    RESULTS.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(result)
+
+
 def save(summary):
     data = json.loads(RESULTS.read_text(encoding="utf-8")) if RESULTS.exists() else {}
     data.setdefault("agent", {}).setdefault("runs", []).append(summary)
@@ -199,7 +240,11 @@ def main():
     p.add_argument("--workers", type=int, default=2)
     p.add_argument("--no-save", action="store_true")
     p.add_argument("--pace", type=float, default=0)
+    p.add_argument("--super-check-test", default="")
     a = p.parse_args()
+    if a.super_check_test:
+        super_check_test(a.super_check_test)
+        return
     scenarios = json.loads(SCENARIOS.read_text(encoding="utf-8"))
     if a.only:
         scenarios = [s for s in scenarios if s["id"] in a.only.split(",")]
