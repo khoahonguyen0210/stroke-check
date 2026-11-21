@@ -22,6 +22,59 @@ async function createFace({ vision, files }) {
 
 
 const $ = (selector) => document.querySelector(selector)
+const PROFILE_KEY = "stroke-check.profile"
+
+function profileStatus(text, saved) {
+  const feedback = $("#profile-status")
+  feedback.textContent = text
+  feedback.hidden = !text
+  $("#switch-person").hidden = !saved
+}
+
+function loadProfile() {
+  try {
+    const profile = JSON.parse(localStorage.getItem(PROFILE_KEY) || "null")
+    if (typeof profile?.name !== "string" || !profile.name.trim()) return
+    $("#name").value = profile.name.slice(0, $("#name").maxLength)
+    $("#phone").value = typeof profile.phone === "string" ? profile.phone.slice(0, $("#phone").maxLength) : ""
+    $("#remember-profile").checked = true
+    profileStatus("Details loaded from this device.", true)
+  } catch {
+    profileStatus("", false)
+  }
+}
+
+function saveProfile() {
+  const name = $("#name").value.trim()
+  const phone = $("#phone").value.trim()
+  const remember = $("#remember-profile").checked
+  try {
+    if (remember && name) {
+      localStorage.setItem(PROFILE_KEY, JSON.stringify({ name, phone }))
+      profileStatus("Details remembered on this device.", true)
+    } else {
+      localStorage.removeItem(PROFILE_KEY)
+      profileStatus(remember ? "Enter a name to remember these details." : "", false)
+    }
+  } catch {
+    profileStatus(remember ? "This browser couldn’t remember your details." : "This browser couldn’t clear the saved details.", false)
+  }
+}
+
+$("#remember-profile").onchange = saveProfile
+$("#name").onchange = saveProfile
+$("#phone").onchange = saveProfile
+$("#switch-person").onclick = () => {
+  $("#setup").reset()
+  saveProfile()
+  contactsUser = undefined
+  resetContactForm()
+  $("#contact-list").replaceChildren()
+  $("#contacts").hidden = true
+  $("#name").focus()
+}
+loadProfile()
+
 let visionTasks
 
 async function createTasks() {
@@ -215,6 +268,7 @@ $("#setup").onsubmit = async (event) => {
     $("#alert-status").focus()
     return
   }
+  saveProfile()
   resetEmergency()
   hideVisuals()
   $("#result").hidden = true
@@ -311,15 +365,19 @@ function deliverySummary(sent) {
 
 $("#contacts-open").onclick = async () => {
   if (!$("#name").reportValidity()) return
-  contactsUser = encodeURIComponent($("#name").value.trim())
+  saveProfile()
+  const user = encodeURIComponent($("#name").value.trim())
+  if (contactsUser !== user) $("#contact-list").replaceChildren()
+  contactsUser = user
   resetContactForm()
   $("#contacts").hidden = false
   $("#contact-form input").focus()
   $("#contacts-status").textContent = ""
   try {
-    showContacts(await api(`/api/contacts/${contactsUser}`))
+    const contacts = await api(`/api/contacts/${user}`)
+    if (contactsUser === user) showContacts(contacts)
   } catch (error) {
-    $("#contacts-status").textContent = error.message
+    if (contactsUser === user) $("#contacts-status").textContent = error.message
   }
 }
 $("#contacts-close").onclick = () => { $("#contacts").hidden = true }
@@ -331,28 +389,32 @@ $("#contact-form").onsubmit = async (event) => {
   event.preventDefault()
   const payload = Object.fromEntries(new FormData(event.target))
   payload.consent = payload.consent === "on"
+  const user = contactsUser
   const original = editingEmail
   if (original) payload.original_email = original
   const save = $("#contact-save")
   save.disabled = true
   try {
-    showContacts(await api(`/api/contacts/${contactsUser}`, payload, original ? "PUT" : "POST"))
+    const contacts = await api(`/api/contacts/${user}`, payload, original ? "PUT" : "POST")
+    if (contactsUser !== user) return
+    showContacts(contacts)
     resetContactForm()
     $("#contacts-status").textContent = original ? "Contact updated." : "Contact saved."
   } catch (error) {
-    $("#contacts-status").textContent = error.message
+    if (contactsUser === user) $("#contacts-status").textContent = error.message
   } finally {
     save.disabled = false
   }
 }
 $("#contacts-test").onclick = async (event) => {
+  const user = contactsUser
   event.target.disabled = true
   try {
     $("#contacts-status").textContent = "Sending test email…"
-    const { sent } = await api(`/api/alert/test/${contactsUser}`, {})
-    $("#contacts-status").textContent = deliverySummary(sent)
+    const { sent } = await api(`/api/alert/test/${user}`, {})
+    if (contactsUser === user) $("#contacts-status").textContent = deliverySummary(sent)
   } catch (error) {
-    $("#contacts-status").textContent = error.message
+    if (contactsUser === user) $("#contacts-status").textContent = error.message
   } finally {
     event.target.disabled = false
   }

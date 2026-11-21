@@ -27,8 +27,13 @@
       <form id="setup">
         <h2>Start a check</h2>
         <label class="name-input">Name <input id="name" required maxlength="80" autocomplete="given-name" placeholder="Enter your name"></label>
-        <label><input id="share-location" type="checkbox"> Share location with trusted contacts if alerted</label>
         <label class="name-input">Your phone (optional) <input id="phone" type="tel" maxlength="40" autocomplete="tel" placeholder="Shown to your contacts only if a warning fires"></label>
+        <div class="profile-actions">
+          <label><input id="remember-profile" type="checkbox"> Remember my details on this device</label>
+          <button id="switch-person" type="button" hidden>Switch person</button>
+        </div>
+        <p id="profile-status" role="status" hidden></p>
+        <label><input id="share-location" type="checkbox"> Share location with trusted contacts if alerted</label>
         <div class="setup-actions">
           <button id="start">Start camera check</button>
           <button id="contacts-open" type="button">Trusted contact emails</button>

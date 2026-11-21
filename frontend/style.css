@@ -156,3 +156,7 @@ dd { margin: 0 0 .5rem; overflow-wrap: anywhere; }
 #contact-list button { min-height: 2.1rem; padding: .25rem .65rem; }
 
 #mic-paused { color: var(--muted); font-size: .92rem; }
+
+.profile-actions { display: flex; align-items: center; gap: .55rem .85rem; flex-wrap: wrap; }
+#switch-person { min-height: 2rem; padding: .2rem .65rem; }
+#profile-status { margin: -.35rem 0 0; color: var(--muted); font-size: .9rem; }
