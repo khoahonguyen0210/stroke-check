@@ -57,7 +57,7 @@ MEDICINE_WORDS = (
 )
 DOSE = r"\b\d+(\.\d+)?\s*(mg|milligrams?|ml|mcg|units?|tablets?|pills?|viên|miligramos?)\b"
 NEGATION = r"\b(no|not|don'?t|do not|never|avoid|without|nunca|evite|evita|sin|không|đừng|chớ|tránh)\b"
-QUESTION_START = r"^\s*(¿|are|is|do|does|did|has|have|what|which|any|toma|tiene|usa|ông|bà|anh|chị|bạn|họ|có)\b"
+QUESTION_START = r"^\s*(¿|are|is|do|does|did|has|have|had|what|which|any|toma|tiene|tuvo|ha|usa|ông|bà|anh|chị|bạn|họ|có)\b"
 
 FIXED_SCRIPT = {
     "en": [
@@ -148,8 +148,10 @@ def check(text):
         return {"ok": False, "reason": "not_stroke"}
     if _any(WAIT, t):
         return {"ok": False, "reason": "wait"}
-    if _any(DIAGNOSIS, t):
-        return {"ok": False, "reason": "diagnosis"}
+    for sentence in re.split(r"(?<=[.!?;])\s+", t):
+        is_question = sentence.rstrip().endswith("?") and re.search(QUESTION_START, sentence)
+        if not is_question and _any(DIAGNOSIS, sentence):
+            return {"ok": False, "reason": "diagnosis"}
     if _medicine_advice(t):
         return {"ok": False, "reason": "medicine"}
     if _any(REASSURANCE, t):

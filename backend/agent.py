@@ -14,33 +14,37 @@ TIMEOUT_S = 6
 MODELS = {
     "bolt": {"base_url": "https://integrate.api.nvidia.com/v1", "key": "NVIDIA_API_KEY", "model": "nvidia/nemotron-3.5-bolt-e4b"},
     "super": {"base_url": "https://integrate.api.nvidia.com/v1", "key": "NVIDIA_API_KEY", "model": "nvidia/nemotron-3.5-super-vl-120b-a12b"},
-    "gemini": {"base_url": "https://generativelanguage.googleapis.com/v1beta/openai/", "key": "GEMINI_API_KEY", "model": "gemini-2.5-flash"},
+    "gemini": {"base_url": "https://generativelanguage.googleapis.com/v1beta/openai/", "key": "GEMINI_API_KEY", "model": "gemini-3.5-flash"},
 }
 
 LANGUAGES = {"en": "English", "es": "Spanish", "vi": "Vietnamese"}
 
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = "v2"
 SYSTEM = """You are the Stroke Check emergency assistant. A stroke warning check just found possible stroke signs. The app has already shown "Call 911 now."
 You help the family in the minutes before the ambulance arrives. You act only through tools.
 
-Every turn:
-- Speak with speak() or ask(): calm, short, plain sentences. One instruction or one question per turn.
-- Then call finish_turn().
+Every turn, in this order:
+1. If the family's last message states a fact, call record_fact (or start_timer for the time) first.
+2. If the family's last message asks a question, call lookup_guidance first, then speak the answer using only the returned text.
+3. Say exactly one thing with speak() or ask one question with ask(). Use ask() for every question.
+4. Call finish_turn().
 
-Order of the conversation (skip steps that are done; see STATE):
-1. Say possible stroke signs were found and tell them to call 911 now if they have not.
-2. Ask when the person was last seen acting normal (field last_known_normal). When they answer, call start_timer with their exact words. If they correct the time, call start_timer again.
-3. Tell them not to give any food, drink or medicine.
-4. Tell them to stay with the person and unlock the door.
-5. Ask the other handoff facts one at a time: blood_thinners, recent_fall_or_head_injury, diabetes, seizure, current_medications, allergies.
-6. When the facts are collected or the family says the ambulance is here, call notify_contacts with a short factual update and call write_handoff.
+What to say, in order (skip what is done; see STATE):
+- First turn: speak "Possible stroke signs were found. Call 911 now." (in {language}).
+- Ask when the person was last seen acting normal: ask(field="last_known_normal").
+- Tell them not to give any food, drink or medicine.
+- Tell them to stay with the person and unlock the door.
+- Ask, one per turn: blood_thinners, recent_fall_or_head_injury, diabetes, seizure, current_medications, allergies.
+- If the family says they have not called 911, or hesitates, tell them to call 911 now before anything else.
+- When the family says 911 is called, call notify_contacts("911 has been called.") once.
+- When the family says the ambulance or paramedics are here, call write_handoff, then speak one sentence telling them to show the handoff to the paramedics.
 
 Rules:
-- When the family states a fact, call record_fact with their exact words copied from their message. Never guess, infer or rephrase a value. If they refuse or do not know, record nothing and move on.
-- If the family asks a question, call lookup_guidance and answer only with the text it returns. If it returns "Ask the 911 dispatcher", say that.
-- Never diagnose. Never say they are fine, that it is not a stroke, or that they can wait. Never suggest driving to the hospital. Never give medicine or dose advice.
-- After 911 is called, call notify_contacts once with "911 has been called."
-- Reply in {language}. Tool arguments for lookup_guidance are in English."""
+- record_fact and start_timer values must be copied word for word from the family's message. Never guess, infer or rephrase. If they refuse or do not know, record nothing and move on.
+- If the family corrects the time, call start_timer again with the new words.
+- Never diagnose. Never say they are fine or okay, that it is not a stroke, or that they can wait. Never suggest driving. Never give medicine or dose advice.
+- Every speak and ask text must be in {language}, even if the family writes in another language. lookup_guidance questions are in English.
+- One short, calm sentence per speak. No tool names or JSON in spoken text."""
 
 
 def load_env():
@@ -71,6 +75,8 @@ def new_state(result, language):
         "timeline": [{"t": agent_tools.now(), "event": "check found possible stroke signs; app showed 'Call 911 now'"}],
         "script_pos": 0,
         "handoff_written": False,
+        "notified": [],
+        "turn_said_start": 0,
     }
 
 
@@ -107,21 +113,28 @@ def text_tool_calls(content):
     return calls
 
 
+CLIENTS = {}
+
+
 def client_for(name):
     from openai import OpenAI
 
-    load_env()
-    cfg = MODELS[name]
-    return OpenAI(base_url=cfg["base_url"], api_key=os.environ.get(cfg["key"], "missing"), timeout=TIMEOUT_S, max_retries=0), cfg["model"]
+    if name not in CLIENTS:
+        load_env()
+        cfg = MODELS[name]
+        CLIENTS[name] = OpenAI(base_url=cfg["base_url"], api_key=os.environ.get(cfg["key"], "missing"), timeout=TIMEOUT_S, max_retries=0)
+    return CLIENTS[name], MODELS[name]["model"]
 
 
-def call_model(client, model, msgs, reasoning, name):
-    extra = {}
+def call_model(client, model, msgs, reasoning, name, timeout=TIMEOUT_S):
+    extra, kw = {}, {}
     if name in ("bolt", "super"):
         extra = {"chat_template_kwargs": {"enable_thinking": bool(reasoning)}}
+    if name == "gemini":
+        kw = {"reasoning_effort": "low" if reasoning else "none"}
     return client.chat.completions.create(
         model=model, messages=msgs, tools=agent_tools.TOOLS, tool_choice="required",
-        temperature=0.2, max_tokens=1024 if reasoning else 400, extra_body=extra or None,
+        temperature=0.2, max_tokens=1024 if reasoning else 400, extra_body=extra or None, timeout=timeout, **kw,
     )
 
 
@@ -137,12 +150,19 @@ def fallback(state, actions, reason):
 def run_turn(state, model_name="bolt", reasoning=False):
     actions = []
     said_before = len(state["said"])
+    state["turn_said_start"] = said_before
+    turn_start = time.time()
     try:
         client, model = client_for(model_name)
         msgs = messages_for(state)
         for step in range(MAX_STEPS):
+            left = TIMEOUT_S - (time.time() - turn_start)
+            if left <= 0.3:
+                if len(state["said"]) == said_before:
+                    fallback(state, actions, "turn over 6 s")
+                break
             t0 = time.time()
-            r = call_model(client, model, msgs, reasoning, model_name)
+            r = call_model(client, model, msgs, reasoning, model_name, timeout=left)
             latency = round((time.time() - t0) * 1000)
             m = r.choices[0].message
             calls = m.tool_calls or []
@@ -166,16 +186,19 @@ def run_turn(state, model_name="bolt", reasoning=False):
                 name = c.function.name
                 try:
                     args = json.loads(c.function.arguments or "{}")
+                    if name in ("finish_turn", "write_handoff"):
+                        args = {}
                     res = agent_tools.RUN[name](state, **args) if name in agent_tools.RUN else {"ok": False, "error": f"Unknown tool {name}"}
                 except (TypeError, ValueError) as error:
                     args, res = {"raw": c.function.arguments}, {"ok": False, "error": f"Bad arguments: {error}"}
                 actions.append({"tool": name, "args": args, "result": res, "t": agent_tools.now(), "latency_ms": latency})
                 msgs.append({"role": "tool", "tool_call_id": c.id, "content": json.dumps(res, ensure_ascii=False)})
-                finished = finished or name == "finish_turn"
+                finished = finished or (name == "finish_turn" and res.get("ok"))
             if finished:
                 break
     except Exception as error:
-        fallback(state, actions, f"{type(error).__name__}")
+        if len(state["said"]) == said_before:
+            fallback(state, actions, f"{type(error).__name__}")
     if len(state["said"]) == said_before:
         fallback(state, actions, "model said nothing")
     say = " ".join(state["said"][said_before:])
@@ -204,6 +227,15 @@ def reply(text, state, language=None, model_name="bolt", reasoning=False):
     state["timeline"].append({"t": agent_tools.now(), "event": f"family: {text}"})
     say, actions = run_turn(state, model_name, reasoning)
     return respond(state, actions, say)
+
+
+def warm(model_name="bolt"):
+    try:
+        client, model = client_for(model_name)
+        client.chat.completions.create(model=model, messages=[{"role": "user", "content": "ok"}], max_tokens=1, timeout=20)
+        return True
+    except Exception:
+        return False
 
 
 def handoff_text(session):

@@ -135,6 +135,7 @@ def main():
     table = []
     for config in a.configs.split(","):
         model_name, reasoning = CONFIGS[config]
+        print(f"warm {config}: {agent.warm(model_name)}", flush=True)
         t = time.time()
         with ThreadPoolExecutor(a.workers) as ex:
             runs = list(ex.map(lambda s: run_scenario(s, model_name, reasoning), scenarios))

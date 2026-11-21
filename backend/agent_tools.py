@@ -119,6 +119,8 @@ def lookup_guidance(state, question):
 
 
 def notify_contacts(state, update):
+    if update in state.setdefault("notified", []):
+        return {"ok": True, "note": "Already sent. Do not send it again."}
     check = safety.check(update)
     if not check["ok"]:
         state["blocked"].append({"t": now(), "tool": "notify_contacts", "text": update, "reason": check["reason"], "replaced_with": None})
@@ -129,6 +131,7 @@ def notify_contacts(state, update):
         sent = alerts.notify(state["user"], update)
     except Exception as error:
         sent = [{"ok": False, "error": str(error)}]
+    state["notified"].append(update)
     state["timeline"].append({"t": now(), "event": f"notified contacts: {update}"})
     return {"ok": True, "sent": sent}
 
@@ -157,12 +160,16 @@ def build_handoff(state):
 
 
 def write_handoff(state):
+    if not state["handoff_written"]:
+        state["timeline"].append({"t": now(), "event": "handoff written"})
     state["handoff_written"] = True
-    state["timeline"].append({"t": now(), "event": "handoff written"})
-    return {"ok": True, "handoff": build_handoff(state)["text"]}
+    return {"ok": True, "handoff": build_handoff(state)["text"],
+            "next": "Handoff is ready. Now speak one short sentence telling the family to show it to the paramedics, then call finish_turn."}
 
 
 def finish_turn(state):
+    if len(state["said"]) <= state.get("turn_said_start", 0):
+        return {"ok": False, "error": "You have not said anything to the family this turn. Call speak or ask first, then finish_turn."}
     return {"ok": True}
 
 
