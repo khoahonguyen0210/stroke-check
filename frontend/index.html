@@ -44,7 +44,8 @@
         <label>Relationship <input name="relationship" required maxlength="80"></label>
         <label>Email <input name="email" type="email" required maxlength="254"></label>
         <label><input name="consent" type="checkbox" required> This contact agreed to receive alerts</label>
-        <button>Save contact</button>
+        <button id="contact-save">Save contact</button>
+        <button id="contact-edit-cancel" type="button" hidden>Cancel edit</button>
       </form>
       <button id="contacts-test" type="button">Send test email</button>
       <button id="contacts-close" type="button">Close</button>

@@ -259,9 +259,9 @@ $("#back-to-start").onclick = () => {
   $("#start").focus()
 }
 
-async function api(path, payload) {
+async function api(path, payload, method = "POST") {
   const options = payload === undefined ? {} : {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
   }
   const response = await fetch(path, options)
   const result = await response.json()
@@ -270,11 +270,37 @@ async function api(path, payload) {
 }
 
 let contactsUser
+let editingEmail
+
+function resetContactForm() {
+  editingEmail = undefined
+  $("#contact-form").reset()
+  $("#contact-save").textContent = "Save contact"
+  $("#contact-edit-cancel").hidden = true
+}
+
+function startContactEdit(contact) {
+  const fields = $("#contact-form").elements
+  editingEmail = contact.email
+  for (const key of ["name", "relationship", "email"]) fields.namedItem(key).value = contact[key]
+  fields.namedItem("consent").checked = contact.consent === true
+  $("#contact-save").textContent = "Save changes"
+  $("#contact-edit-cancel").hidden = false
+  $("#contacts-status").textContent = ""
+  fields.namedItem("name").focus()
+}
 
 function showContacts(contacts) {
   $("#contact-list").replaceChildren(...contacts.map((contact) => {
     const item = document.createElement("li")
-    item.textContent = `${contact.name} (${contact.relationship}) · ${contact.email}`
+    const label = document.createElement("span")
+    label.textContent = `${contact.name} (${contact.relationship}) · ${contact.email}`
+    const edit = document.createElement("button")
+    edit.type = "button"
+    edit.textContent = "Edit"
+    edit.setAttribute("aria-label", `Edit ${contact.name}`)
+    edit.onclick = () => startContactEdit(contact)
+    item.append(label, edit)
     return item
   }))
 }
@@ -286,6 +312,7 @@ function deliverySummary(sent) {
 $("#contacts-open").onclick = async () => {
   if (!$("#name").reportValidity()) return
   contactsUser = encodeURIComponent($("#name").value.trim())
+  resetContactForm()
   $("#contacts").hidden = false
   $("#contact-form input").focus()
   $("#contacts-status").textContent = ""
@@ -296,16 +323,26 @@ $("#contacts-open").onclick = async () => {
   }
 }
 $("#contacts-close").onclick = () => { $("#contacts").hidden = true }
+$("#contact-edit-cancel").onclick = () => {
+  resetContactForm()
+  $("#contacts-status").textContent = ""
+}
 $("#contact-form").onsubmit = async (event) => {
   event.preventDefault()
   const payload = Object.fromEntries(new FormData(event.target))
   payload.consent = payload.consent === "on"
+  const original = editingEmail
+  if (original) payload.original_email = original
+  const save = $("#contact-save")
+  save.disabled = true
   try {
-    showContacts(await api(`/api/contacts/${contactsUser}`, payload))
-    event.target.reset()
-    $("#contacts-status").textContent = "Contact saved."
+    showContacts(await api(`/api/contacts/${contactsUser}`, payload, original ? "PUT" : "POST"))
+    resetContactForm()
+    $("#contacts-status").textContent = original ? "Contact updated." : "Contact saved."
   } catch (error) {
     $("#contacts-status").textContent = error.message
+  } finally {
+    save.disabled = false
   }
 }
 $("#contacts-test").onclick = async (event) => {

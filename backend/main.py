@@ -194,6 +194,10 @@ class Contact(BaseModel):
     consent: bool = False
 
 
+class ContactEdit(Contact):
+    original_email: str = Field(min_length=1, max_length=254)
+
+
 class AlertRequest(BaseModel):
     user: str
     result: dict
@@ -227,6 +231,27 @@ def post_contacts(user: str, payload: Contact):
         if len(contacts) >= 3:
             raise HTTPException(409, "You can save up to three contacts.")
         return storage.save_contacts(user, contacts + [payload.model_dump()])
+
+
+@app.put("/api/contacts/{user}")
+def edit_contact(user: str, payload: ContactEdit):
+    validate_user(user)
+    if not payload.consent:
+        raise HTTPException(422, "Contact consent is required.")
+    original = payload.original_email.casefold()
+    updated_email = payload.email.casefold()
+    with CONTACT_LOCK:
+        contacts = storage.contacts(user)
+        for index, contact in enumerate(contacts):
+            if contact["email"].casefold() != original:
+                continue
+            if updated_email != original and any(item["email"].casefold() == updated_email for item in contacts):
+                raise HTTPException(409, "A contact already uses that email address.")
+            changes = payload.model_dump(exclude={"original_email"}, exclude_unset=True)
+            contacts[index] = {**contact, **changes}
+            return storage.save_contacts(user, contacts)
+        raise HTTPException(404, "That contact could not be found.")
+
 
 
 def public_base(request):
