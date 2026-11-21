@@ -144,23 +144,23 @@ function renderResult(result) {
   $("#features").textContent = JSON.stringify(result.features, null, 2)
   $("#latency").textContent = JSON.stringify(result.latency_ms, null, 2)
   $("#outcome").textContent = {
-    warning: "Possible sign detected. Call 911 now.",
-    clear: "No face or arm sign observed",
-    retake: "Camera check needs a retake",
+    warning: "Possible stroke sign. Call 911 now.",
+    clear: "Face and arm movements looked typical",
+    retake: "Let’s try the camera check again",
   }[result.overall]
   $("#retake-reason").textContent = result.overall === "retake" ? result.retake_reason ?? "" : ""
   $("#retake").hidden = result.overall === "warning"
-  $("#retake").textContent = result.overall === "retake" ? "Retake check" : "Run another check"
+  $("#retake").textContent = result.overall === "retake" ? "Try again" : "Run another check"
   $("#signs").replaceChildren(...Object.entries(result.signs).map(([name, sign]) => {
     const card = document.createElement("article")
     card.className = sign.flag ? "flagged" : "sign"
     const title = document.createElement("h3")
-    title.textContent = { face: "Facial asymmetry", arms: "Arm drift" }[name]
+    title.textContent = { face: "Face movement", arms: "Arm movement" }[name]
     const detail = document.createElement("p")
     detail.textContent = {
-      possible_sign: "Possible sign",
-      unavailable: "Camera view insufficient",
-      not_observed: "Sign not observed",
+      possible_sign: "Possible warning sign",
+      unavailable: "The camera couldn’t get a clear view",
+      not_observed: "Looked typical in this check",
     }[sign.status]
     card.append(title, detail)
     return card
