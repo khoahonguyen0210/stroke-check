@@ -116,7 +116,116 @@ def embed(worker=0, workers=1):
     print(f"EMBED DONE worker {worker}", flush=True)
 
 
+TEST_SPEAKERS = ["F03", "M05", "FC03", "MC04"]
+LAYERS = [3, 6, 8, 10, 12]
+MODEL_PATH = Path("models/speech.joblib")
+RESULTS = Path("models/results.json")
+
+
+def load_embeddings():
+    import pandas as pd
+
+    meta = pd.read_csv(EMB_DIR / "meta.csv")
+    idx, emb = [], []
+    for f in sorted(EMB_DIR.glob("chunk_*.npz")):
+        z = np.load(f)
+        idx.append(z["idx"])
+        emb.append(z["emb"])
+    idx = np.concatenate(idx)
+    emb = np.concatenate(emb).astype(np.float32)
+    rows = meta.set_index("idx").loc[idx].reset_index()
+    y = (rows["speech_status"] == "dysarthria").astype(int).to_numpy()
+    return rows, emb, y
+
+
+def make_model(kind):
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.pipeline import make_pipeline
+    from sklearn.preprocessing import StandardScaler
+    from xgboost import XGBClassifier
+
+    if kind == "logreg":
+        return make_pipeline(StandardScaler(), LogisticRegression(C=0.1, max_iter=2000, class_weight="balanced"))
+    return XGBClassifier(n_estimators=300, max_depth=4, learning_rate=0.05, subsample=0.8, colsample_bytree=0.5, n_jobs=8, eval_metric="logloss")
+
+
+def scores(y, p):
+    from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+
+    pred = (p >= 0.5).astype(int)
+    out = {"n": int(len(y)), "accuracy": round(float(accuracy_score(y, pred)), 3), "f1": round(float(f1_score(y, pred)), 3)}
+    if len(set(y)) > 1:
+        out["auc"] = round(float(roc_auc_score(y, p)), 3)
+    return out
+
+
+def loso(X, y, groups, kind):
+    p = np.zeros(len(y))
+    for g in sorted(set(groups)):
+        test = groups == g
+        m = make_model(kind)
+        m.fit(X[~test], y[~test])
+        p[test] = m.predict_proba(X[test])[:, 1]
+    return p
+
+
+def train():
+    import json
+
+    import joblib
+
+    rows, emb, y = load_embeddings()
+    groups = rows["speaker"].to_numpy()
+    print(f"{len(y)} clips from {len(set(groups))} speakers, {y.sum()} dysarthric", flush=True)
+    test = np.isin(groups, TEST_SPEAKERS)
+    print(f"held-out test speakers {TEST_SPEAKERS}: {test.sum()} clips; train speakers: {sorted(set(groups[~test]))}", flush=True)
+    selection = {}
+    for layer in LAYERS:
+        p = loso(emb[~test, layer], y[~test], groups[~test], "logreg")
+        selection[f"logreg_layer{layer}"] = scores(y[~test], p)
+        print(f"  select logreg layer {layer:2d}: {selection[f'logreg_layer{layer}']}", flush=True)
+    best_layer = max(LAYERS, key=lambda l: selection[f"logreg_layer{l}"]["f1"])
+    p = loso(emb[~test, best_layer], y[~test], groups[~test], "xgboost")
+    selection[f"xgboost_layer{best_layer}"] = scores(y[~test], p)
+    print(f"  select xgboost layer {best_layer:2d}: {selection[f'xgboost_layer{best_layer}']}", flush=True)
+    best_kind = max(["logreg", "xgboost"], key=lambda k: selection[f"{k}_layer{best_layer}"]["f1"])
+    print(f"chosen: {best_kind}, layer {best_layer}", flush=True)
+
+    held = {}
+    for kind in ["logreg", "xgboost"]:
+        m = make_model(kind)
+        m.fit(emb[~test, best_layer], y[~test])
+        p = m.predict_proba(emb[test, best_layer])[:, 1]
+        held[kind] = scores(y[test], p)
+        held[kind]["per_speaker_accuracy"] = {s: round(float(((p[groups[test] == s] >= 0.5) == y[test][groups[test] == s]).mean()), 3) for s in TEST_SPEAKERS}
+        print(f"held-out {kind}: {held[kind]}", flush=True)
+    loso_all = scores(y, loso(emb[:, best_layer], y, groups, best_kind))
+    print(f"leave-one-speaker-out over all 15 speakers ({best_kind}): {loso_all}", flush=True)
+
+    final = make_model(best_kind)
+    final.fit(emb[:, best_layer], y)
+    MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump({"model": final, "kind": best_kind, "layer": best_layer, "max_seconds": MAX_SECONDS}, MODEL_PATH)
+    data = json.loads(RESULTS.read_text(encoding="utf-8")) if RESULTS.exists() else {}
+    data["speech"] = {
+        "dataset": "TORGO (abnerh/TORGO-database), one mic per utterance, up to 400 clips per speaker",
+        "clips": int(len(y)), "speakers": int(len(set(groups))), "dysarthric_clips": int(y.sum()),
+        "features": f"wav2vec2-base layer {best_layer} mean-pooled",
+        "model": best_kind,
+        "test_speakers": TEST_SPEAKERS,
+        "held_out": held[best_kind],
+        "held_out_both_models": held,
+        "loso_all_speakers": loso_all,
+        "selection_cv_on_train_speakers": selection,
+        "note": "Dysarthria in TORGO is a proxy for stroke slurring; TORGO prompts are mostly single words and short phrases.",
+    }
+    RESULTS.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"saved {MODEL_PATH} and {RESULTS}", flush=True)
+
+
 if __name__ == "__main__":
-    step = sys.argv[1] if len(sys.argv) > 1 else "all"
+    step = sys.argv[1] if len(sys.argv) > 1 else "train"
     if step == "embed":
         embed(int(sys.argv[2]) if len(sys.argv) > 2 else 0, int(sys.argv[3]) if len(sys.argv) > 3 else 1)
+    if step == "train":
+        train()
