@@ -10,7 +10,28 @@
   <main>
     <h1>Stroke Check</h1>
     <p>If you suspect a stroke, call 911 now.</p>
-    <button id="start">Start webcam</button>
+    <form id="setup">
+      <label>Name <input id="name" required maxlength="80"></label>
+      <label><input id="collect" type="checkbox"> Data collection mode</label>
+      <fieldset id="labels" hidden>
+        <legend>Take details</legend>
+        <label>Signs <select id="label">
+          <option value="normal">Normal</option>
+          <option value="face_droop">Face droop</option>
+          <option value="arm_drift">Arm drift</option>
+          <option value="slurred">Slurred speech</option>
+          <option value="face_droop,arm_drift">Face and arms</option>
+          <option value="face_droop,slurred">Face and speech</option>
+          <option value="arm_drift,slurred">Arms and speech</option>
+          <option value="face_droop,arm_drift,slurred">All three</option>
+        </select></label>
+        <label>Lighting <select id="lighting"><option value="good">Good</option><option value="dim">Dim</option></select></label>
+        <label><input id="glasses" type="checkbox"> Glasses</label>
+      </fieldset>
+      <button id="start">Start check</button>
+    </form>
+    <h2 id="prompt"></h2>
+    <button id="done" hidden>Done</button>
     <p id="status" role="status"></p>
     <div id="preview" hidden><video autoplay muted playsinline></video><canvas></canvas></div>
   </main>

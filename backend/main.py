@@ -1,9 +1,10 @@
+import json
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.staticfiles import StaticFiles
 
-from backend import fusion
+from backend import fusion, storage
 
 ROOT = Path(__file__).resolve().parents[1]
 app = FastAPI()
@@ -21,7 +22,11 @@ async def check(meta: str = Form(), face: str = Form(), arms: str = Form(), audi
 
 @app.post("/api/collect")
 async def collect(meta: str = Form(), face: str = Form(), arms: str = Form(), audio: UploadFile = File(), label: str = Form()):
-    return {"path": None}
+    try:
+        path = storage.save_session(json.loads(meta), json.loads(face), json.loads(arms), await audio.read(), label)
+    except (KeyError, TypeError, ValueError) as error:
+        raise HTTPException(422, "Invalid session data.") from error
+    return {"path": str(path.relative_to(ROOT))}
 
 
 @app.post("/api/baseline/{user}")
