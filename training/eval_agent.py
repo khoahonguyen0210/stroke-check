@@ -3,6 +3,7 @@ import json
 import re
 import statistics
 import time
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -40,7 +41,7 @@ def language_ok(lang, text):
     return not any(c in VI_CHARS for c in text.lower())
 
 
-def run_scenario(sc, model_name, reasoning):
+def run_scenario(sc, model_name, reasoning, pace=0):
     result = {"user": "eval", "overall": "warning",
               "signs": {k: {"flag": True, "p": p} for k, p in sc["signs"].items()}}
     turns = []
@@ -49,6 +50,7 @@ def run_scenario(sc, model_name, reasoning):
     turns.append({"family": None, "say": out["say"], "actions": out["actions"], "ms": round((time.time() - t) * 1000)})
     state = out["state"]
     for msg in sc["messages"]:
+        time.sleep(pace)
         t = time.time()
         out = agent.reply(msg, state, sc["language"], model_name, reasoning)
         state = out["state"]
@@ -92,7 +94,10 @@ def summarize(label, config, scenarios, runs):
                      "fallbacks": sum(1 for t in run["turns"] for a in t["actions"] if a["tool"] == "fixed_script")})
     names = sorted({k for r in rows for k in r["checks"]})
     rates = {n: round(sum(r["checks"][n] for r in rows if n in r["checks"]) / sum(1 for r in rows if n in r["checks"]), 3) for n in names}
+    reasons = Counter(a["args"]["reason"] for run in runs for t in run["turns"] for a in t["actions"] if a["tool"] == "fixed_script")
+    infra = sum(v for k, v in reasons.items() if k in ("RateLimitError", "InternalServerError"))
     turn_ms = [t["ms"] for run in runs for t in run["turns"]]
+    valid = infra <= 0.5 * len(turn_ms)
     call_ms = [a["latency_ms"] for run in runs for t in run["turns"] for a in t["actions"] if a.get("latency_ms")]
     return {
         "label": label,
@@ -106,6 +111,9 @@ def summarize(label, config, scenarios, runs):
         "check_rates": rates,
         "safety_interventions": sum(r["interventions"] for r in rows),
         "fallback_turns": sum(r["fallbacks"] for r in rows),
+        "fallback_reasons": dict(reasons),
+        "valid": valid,
+        "note": None if valid else f"Not a model score: {infra} turns failed with API rate limit or server errors.",
         "turn_latency_ms": {"mean": round(statistics.mean(turn_ms)), "median": round(statistics.median(turn_ms)),
                             "p95": round(sorted(turn_ms)[int(0.95 * (len(turn_ms) - 1))])},
         "model_call_latency_ms_median": round(statistics.median(call_ms)) if call_ms else None,
@@ -125,8 +133,9 @@ def main():
     p.add_argument("--configs", default="bolt_off,bolt_on,super,gemini")
     p.add_argument("--label", default=agent.PROMPT_VERSION)
     p.add_argument("--only", default="")
-    p.add_argument("--workers", type=int, default=4)
+    p.add_argument("--workers", type=int, default=2)
     p.add_argument("--no-save", action="store_true")
+    p.add_argument("--pace", type=float, default=0)
     a = p.parse_args()
     scenarios = json.loads(SCENARIOS.read_text(encoding="utf-8"))
     if a.only:
@@ -138,7 +147,7 @@ def main():
         print(f"warm {config}: {agent.warm(model_name)}", flush=True)
         t = time.time()
         with ThreadPoolExecutor(a.workers) as ex:
-            runs = list(ex.map(lambda s: run_scenario(s, model_name, reasoning), scenarios))
+            runs = list(ex.map(lambda s: run_scenario(s, model_name, reasoning, a.pace), scenarios))
         summary = summarize(a.label, config, scenarios, runs)
         summary["wall_s"] = round(time.time() - t)
         (RUNS_DIR / f"{a.label}_{config}.json").write_text(json.dumps(runs, indent=1, ensure_ascii=False, default=str), encoding="utf-8")
@@ -146,7 +155,7 @@ def main():
             save(summary)
         table.append(summary)
         print(f"{config:9} pass {summary['pass_rate']:.2f} | turn ms median {summary['turn_latency_ms']['median']} p95 {summary['turn_latency_ms']['p95']} | "
-              f"safety fixes {summary['safety_interventions']} | fallbacks {summary['fallback_turns']} | {summary['wall_s']} s", flush=True)
+              f"safety fixes {summary['safety_interventions']} | fallbacks {summary['fallback_turns']} {summary['fallback_reasons']} | {summary['wall_s']} s", flush=True)
     names = sorted({k for s in table for k in s["check_rates"]})
     print("\n" + "check".ljust(30) + "".join(s["config"].rjust(10) for s in table))
     for n in names:

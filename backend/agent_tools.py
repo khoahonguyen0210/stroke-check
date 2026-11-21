@@ -29,15 +29,49 @@ def now():
     return datetime.now().isoformat(timespec="seconds")
 
 
+COVER = {
+    "told_911": r"911",
+    "no_food_drink_medicine": r"food|drink|medicine|comida|bebida|medicina|ăn|uống|thuốc",
+    "stay_and_unlock": r"door|unlock|puerta|cửa",
+}
+
+
+def mark_covered(state, text):
+    for key, pattern in COVER.items():
+        if re.search(pattern, text.lower()) and key not in state["covered"]:
+            state["covered"].append(key)
+
+
+def next_step(state):
+    covered = state.get("covered", [])
+    lkn = state["timer"]["last_known_normal"] or state["facts"].get("last_known_normal")
+    if "told_911" not in covered:
+        return "speak: possible stroke signs were found, call 911 now"
+    if not lkn and "last_known_normal" not in state["asked"]:
+        return "ask(field='last_known_normal'): when was the person last seen acting normal?"
+    if "no_food_drink_medicine" not in covered:
+        return "speak: do not give any food, drink or medicine"
+    if "stay_and_unlock" not in covered:
+        return "speak: stay with the person and unlock the door for the paramedics"
+    for field in FIELDS[1:]:
+        if field not in state["asked"] and field not in state["facts"]:
+            return f"ask(field='{field}')"
+    if not state["handoff_written"]:
+        return "speak: stay with the person until the paramedics arrive; when they arrive, call write_handoff"
+    return "speak: show the handoff to the paramedics"
+
+
 def _say(state, text, kind):
     if re.search(r"<\||\w+\s*\{", text or ""):
         return {"ok": False, "error": "text must be plain words for the family, not a tool call."}
     check = safety.check(text)
     if check["ok"]:
+        mark_covered(state, text)
         state["said"].append(text)
         state["timeline"].append({"t": now(), "event": f"{kind}: {text}"})
         return {"ok": True, "said": text}
     line = safety.replacement(check["reason"], state["language"])
+    mark_covered(state, line)
     state["said"].append(line)
     state["blocked"].append({"t": now(), "tool": kind, "text": text, "reason": check["reason"], "replaced_with": line})
     state["timeline"].append({"t": now(), "event": f"{kind} (safety replaced): {line}"})

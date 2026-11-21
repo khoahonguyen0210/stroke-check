@@ -19,7 +19,7 @@ MODELS = {
 
 LANGUAGES = {"en": "English", "es": "Spanish", "vi": "Vietnamese"}
 
-PROMPT_VERSION = "v2"
+PROMPT_VERSION = "v3"
 SYSTEM = """You are the Stroke Check emergency assistant. A stroke warning check just found possible stroke signs. The app has already shown "Call 911 now."
 You help the family in the minutes before the ambulance arrives. You act only through tools.
 
@@ -27,6 +27,8 @@ Every turn, in this order:
 1. If the family's last message states a fact, call record_fact (or start_timer for the time) first.
 2. If the family's last message asks a question, call lookup_guidance first, then speak the answer using only the returned text.
 3. Say exactly one thing with speak() or ask one question with ask(). Use ask() for every question.
+   If the family did not ask a question, say what STATE.next_step says, in your own short words in {language}.
+   You must always say something. Never call finish_turn before speak or ask.
 4. Call finish_turn().
 
 What to say, in order (skip what is done; see STATE):
@@ -76,6 +78,7 @@ def new_state(result, language):
         "script_pos": 0,
         "handoff_written": False,
         "notified": [],
+        "covered": [],
         "turn_said_start": 0,
     }
 
@@ -87,7 +90,8 @@ def context(state):
         "last_known_normal": state["timer"]["last_known_normal"],
         "facts_recorded": state["facts"],
         "fields_already_asked": state["asked"],
-        "turns_so_far": len(state["family"]),
+        "already_covered": state["covered"],
+        "next_step": agent_tools.next_step(state),
     }, ensure_ascii=False)
 
 
@@ -140,8 +144,20 @@ def call_model(client, model, msgs, reasoning, name, timeout=TIMEOUT_S):
 
 def fallback(state, actions, reason):
     script = safety.fixed_script(state["language"])
-    line = script[min(state["script_pos"], len(script) - 1)]
+    covered = state["covered"]
+    lkn = state["timer"]["last_known_normal"] or state["facts"].get("last_known_normal")
+    if not state["said"]:
+        line = script[0] + " " + script[1]
+    elif "told_911" not in covered:
+        line = script[1]
+    elif not lkn and state["script_pos"] < 1:
+        line = script[2]
+    elif "no_food_drink_medicine" not in covered:
+        line = script[3]
+    else:
+        line = script[4]
     state["script_pos"] += 1
+    agent_tools.mark_covered(state, line)
     state["said"].append(line)
     state["timeline"].append({"t": agent_tools.now(), "event": f"fixed script ({reason}): {line}"})
     actions.append({"tool": "fixed_script", "args": {"reason": reason}, "result": {"said": line}, "t": agent_tools.now()})
