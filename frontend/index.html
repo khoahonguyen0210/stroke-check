@@ -28,21 +28,21 @@
         <h2>Start a check</h2>
         <label class="name-input">Name <input id="name" required maxlength="80" autocomplete="given-name" placeholder="Enter your name"></label>
         <label><input id="share-location" type="checkbox"> Share location with trusted contacts if alerted</label>
+        <label class="name-input">Your phone (optional) <input id="phone" type="tel" maxlength="40" autocomplete="tel" placeholder="Shown to your contacts only if a warning fires"></label>
         <div class="setup-actions">
           <button id="start">Start camera check</button>
-          <button id="contacts-open" type="button">Trusted contacts</button>
+          <button id="contacts-open" type="button">Trusted contact emails</button>
         </div>
       </form>
     </div>
     <section id="contacts" hidden>
-      <h2>Trusted contacts</h2>
-      <p>Save up to three people who agree to receive warning emails. You can add a phone number for each contact.</p>
+      <h2>Trusted contact emails</h2>
+      <p>Save up to three people who agree to receive warning emails. Send a test email before the demo.</p>
       <ul id="contact-list"></ul>
       <form id="contact-form">
         <label>Name <input name="name" required maxlength="80"></label>
         <label>Relationship <input name="relationship" required maxlength="80"></label>
         <label>Email <input name="email" type="email" required maxlength="254"></label>
-        <label>Phone (optional) <input name="phone" type="tel" maxlength="40" autocomplete="off"></label>
         <label><input name="consent" type="checkbox" required> This contact agreed to receive alerts</label>
         <button>Save contact</button>
       </form>
