@@ -128,19 +128,6 @@ dd { margin: 0 0 .5rem; overflow-wrap: anywhere; }
 .step-meta { display: block; color: #6f8a7f; font-size: .75rem; }
 @media (max-width: 900px) { .emergency-grid { grid-template-columns: 1fr; } #console { position: static; } }
 
-.why-open { background: #0f1f1a; color: #d6efe4; }
-.why-top { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
-.why-scroll { overflow-x: auto; }
-#why-table { border-collapse: collapse; width: 100%; font-size: .92rem; }
-#why-table th, #why-table td { border-bottom: 1px solid var(--border); padding: .35rem .6rem; text-align: right; }
-#why-table th:first-child { text-align: left; font-weight: 600; text-transform: capitalize; }
-#why-table tr:first-child th { text-align: right; vertical-align: bottom; }
-#why-chart { display: grid; gap: .9rem; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); }
-.bar-group { display: grid; gap: .3rem; }
-.bar { display: grid; grid-template-columns: 2.2rem 1fr 3rem; align-items: center; gap: .4rem; font-size: .88rem; }
-.bar-fill { height: .9rem; background: #76b900; border-radius: .2rem; justify-self: start; }
-#why-notes { color: var(--muted); font-size: .88rem; margin-top: 1rem; }
-
 @media (min-width: 901px) {
   .conversation { max-height: calc(100vh - 8.5rem); overflow-y: auto; padding-right: .35rem; }
   #console { max-height: calc(100vh - 8.5rem); display: flex; flex-direction: column; }

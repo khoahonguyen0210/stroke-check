@@ -41,7 +41,6 @@
         <div class="setup-actions">
           <button id="start">Start camera check</button>
           <button id="contacts-open" type="button">Trusted contact emails</button>
-          <button class="why-open" type="button">Why Nemotron</button>
         </div>
       </form>
     </div>
@@ -125,7 +124,6 @@
       </section>
       <button id="retake" type="button" hidden>Retake</button>
       <button id="back-to-start" type="button">Back to start</button>
-      <button class="why-open" type="button">Why Nemotron</button>
       <details id="under-hood">
         <summary>Measurements and timing</summary>
         <h3>Tracked movement</h3>
@@ -133,14 +131,6 @@
         <h3>Processing time (ms)</h3>
         <pre id="latency"></pre>
       </details>
-    </section>
-    <section id="why" hidden>
-      <div class="why-top"><h2>Why Nemotron</h2><button id="why-close" type="button">Close</button></div>
-      <p id="why-intro"></p>
-      <div class="why-scroll"><table id="why-table"></table></div>
-      <h3>Pass rate by prompt version</h3>
-      <div id="why-chart"></div>
-      <p id="why-notes"></p>
     </section>
   </main>
   <script type="module" src="/app.js"></script>
