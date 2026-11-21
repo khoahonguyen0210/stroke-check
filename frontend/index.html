@@ -82,11 +82,12 @@
           <button id="cancel-alert" type="button">Cancel email alerts</button>
         </div>
         <div class="assistant-heading"><h3>Emergency assistant</h3><span>Powered by Nemotron</span></div>
-        <p id="last-normal">Last known normal time is unknown.</p>
+
         <div class="agent-message">
           <p id="agent-say" role="status"></p>
           <button id="replay-agent" type="button" hidden>Replay aloud</button>
         </div>
+        <p id="agent-progress" hidden></p>
         <form id="agent-answer" hidden>
           <label for="family-message" id="agent-question"></label>
           <input id="family-message" required maxlength="1500" placeholder="Type your answer">
@@ -94,17 +95,29 @@
           <button class="primary">Save answer</button>
           <button id="skip-question" type="button">I don’t know / skip</button>
         </form>
-        <form id="agent-care" hidden>
-          <label for="care-message">Ask about care while help is on the way</label>
-          <input id="care-message" required maxlength="1500" placeholder="What should I do while waiting?">
-          <button class="voice-input" id="dictate-question" type="button" aria-pressed="false" hidden>Speak question</button>
-          <button class="primary">Ask assistant</button>
-        </form>
+        <button id="care-toggle" type="button" hidden aria-controls="care-chat" aria-expanded="false">Ask a question now</button>
+        <section id="care-chat" aria-label="Care chat" hidden>
+          <h4>Care chat</h4>
+          <ol id="care-history" aria-label="Previous care questions"></ol>
+          <form id="agent-care">
+            <label for="care-message">Ask about care while help is on the way</label>
+            <input id="care-message" required maxlength="1500" placeholder="Type a care question">
+            <button class="voice-input" id="dictate-question" type="button" aria-pressed="false" hidden>Speak question</button>
+            <button class="primary">Ask assistant</button>
+          </form>
+          <div id="care-suggestions" hidden>
+            <button type="button">What should I do while waiting?</button>
+            <button type="button">What should I tell paramedics?</button>
+          </div>
+        </section>
         <p id="dictation-status" role="status" hidden></p>
         <p id="dictation-note" hidden>Voice input uses your browser’s speech service. Review the transcript before sending.</p>
-        <h3>Paramedic handoff</h3>
-        <dl id="handoff"></dl>
-        <a id="print-handoff" target="_blank" rel="noopener" hidden>Printable handoff</a>
+        <details id="handoff-panel">
+          <summary>Paramedic handoff</summary>
+          <p id="last-normal">Last known normal time is unknown.</p>
+          <dl id="handoff"></dl>
+          <a id="print-handoff" target="_blank" rel="noopener" hidden>Printable handoff</a>
+        </details>
         <details>
           <summary>Agent actions</summary>
           <ol id="agent-actions"></ol>

@@ -92,3 +92,13 @@ dd { margin: 0 0 .5rem; overflow-wrap: anywhere; }
 #dictation-note, #dictation-status { color: var(--muted); font-size: .92rem; margin: .45rem 0; }
 .voice-input[aria-pressed="true"] { background: #fae9e1; color: var(--warning); border-color: #b76650; }
 #replay-agent { min-height: 2.2rem; padding: .25rem .65rem; font-size: .92rem; }
+
+#agent-progress { color: var(--muted); font-size: .9rem; margin: .6rem 0 0; }
+#care-chat { background: var(--field); border-radius: .7rem; padding: .85rem; }
+#care-chat h4 { font-size: 1.1rem; margin: 0 0 .45rem; }
+#care-history { padding: 0; margin: 0; list-style: none; }
+#care-history li { padding: .55rem 0; border-bottom: 1px solid var(--border); }
+#care-history li p { margin: .3rem 0 .1rem; }
+#care-suggestions { display: flex; flex-wrap: wrap; gap: .4rem; }
+#care-suggestions button { min-height: 2rem; font-size: .9rem; }
+#handoff-panel #last-normal { margin-top: .75rem; }

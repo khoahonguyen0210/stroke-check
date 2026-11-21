@@ -285,6 +285,7 @@ $("#contacts-test").onclick = async (event) => {
 let emergencyRun = 0
 let agentState
 let activeQuestion
+let careRequested = false
 let lastNormalTimer
 let alertPending = false
 let voiceGeneration = 0
@@ -298,6 +299,7 @@ function resetEmergency() {
   emergencyRun += 1
   agentState = undefined
   activeQuestion = undefined
+  careRequested = false
   stopDictation()
   stopVoice()
   currentVoiceSession = undefined
@@ -305,10 +307,11 @@ function resetEmergency() {
   $("#emergency").hidden = true
   $("#agent-say").textContent = ""
   $("#last-normal").textContent = "Last known normal time is unknown."
-  for (const form of [$("#agent-answer"), $("#agent-care")]) {
-    form.reset()
-    form.hidden = true
-  }
+  $("#agent-answer").reset()
+  $("#agent-care").reset()
+  $("#care-history").replaceChildren()
+  $("#handoff-panel").open = false
+  updateCareView()
   $("#replay-agent").hidden = true
   $("#dictation-status").hidden = true
   $("#agent-actions").replaceChildren()
@@ -459,14 +462,55 @@ if (SpeechInput) {
   $("#dictate-question").onclick = (event) => dictate(event.currentTarget, $("#care-message"))
 }
 
-function updateAgent(response, run) {
+function updateCareView() {
+  const ready = Boolean(agentState?.session)
+  const gathering = ready && Boolean(activeQuestion)
+  const chatOpen = ready && (!gathering || careRequested)
+  const toggle = $("#care-toggle")
+  $("#agent-answer").hidden = !gathering || chatOpen
+  $("#agent-progress").hidden = !gathering || chatOpen
+  $("#care-chat").hidden = !chatOpen
+  $("#care-suggestions").hidden = gathering || $("#care-history").children.length > 0
+  toggle.hidden = !gathering
+  toggle.textContent = chatOpen ? "Back to paramedic questions" : "Ask a question now"
+  toggle.setAttribute("aria-expanded", String(chatOpen))
+}
+
+$("#care-toggle").onclick = () => {
+  stopDictation()
+  $("#dictation-status").hidden = true
+  careRequested = !careRequested
+  updateCareView()
+  $(careRequested ? "#care-message" : "#family-message").focus()
+}
+
+for (const suggestion of $("#care-suggestions").querySelectorAll("button")) {
+  suggestion.onclick = () => {
+    const input = $("#care-message")
+    input.value = suggestion.textContent
+    input.focus()
+  }
+}
+
+function addCareExchange(question, answer) {
+  const item = document.createElement("li")
+  const title = document.createElement("strong")
+  const reply = document.createElement("p")
+  title.textContent = question
+  reply.textContent = answer
+  item.append(title, reply)
+  $("#care-history").append(item)
+}
+
+function updateAgent(response, run, careQuestion) {
   if (run !== emergencyRun) return
   agentState = response.state
   activeQuestion = response.question
-  $("#agent-answer").hidden = !activeQuestion
   $("#agent-question").textContent = activeQuestion?.prompt ?? ""
-  $("#agent-care").hidden = !agentState?.session
-  showAgentMessage(response.say ?? "", response.say === activeQuestion?.prompt, agentState?.session)
+  $("#agent-progress").textContent = activeQuestion ? `Paramedic question ${activeQuestion.number} of ${activeQuestion.total}` : ""
+  if (careQuestion) addCareExchange(careQuestion, response.say)
+  updateCareView()
+  showAgentMessage(response.say ?? "", Boolean(careQuestion) || response.say === activeQuestion?.prompt, agentState?.session)
   const handoff = response.handoff ?? {}
   const facts = handoff.facts ?? {}
   const known = facts.last_known_normal ?? agentState?.timer?.last_known_normal
@@ -527,7 +571,7 @@ async function sendAgentMessage(kind, input) {
   const run = emergencyRun
   const text = kind === "skip" ? "" : input.value.trim()
   if (!text && kind !== "skip") return
-  const controls = [...$("#agent-answer").elements, ...$("#agent-care").elements]
+  const controls = [...$("#agent-answer").elements, ...$("#agent-care").elements, $("#care-toggle")]
   controls.forEach((control) => { control.disabled = true })
   try {
     const response = await api("/api/agent/message", {
@@ -535,12 +579,13 @@ async function sendAgentMessage(kind, input) {
     })
     if (run === emergencyRun) {
       input.value = ""
-      updateAgent(response, run)
+      updateAgent(response, run, kind === "question" ? text : undefined)
     }
   } catch (error) {
     if (run === emergencyRun) showAgentMessage("The assistant could not respond. Follow the 911 dispatcher’s instructions.")
   } finally {
     controls.forEach((control) => { control.disabled = false })
+    if (run === emergencyRun) $($("#care-chat").hidden ? "#family-message" : "#care-message").focus()
   }
 }
 

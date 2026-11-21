@@ -27,7 +27,9 @@ def respond(state, actions, line):
     state["conversation"].append({"role": "agent", "text": line})
     response = agent.respond(state, actions, line)
     field = state.get("pending_question")
-    response["question"] = {"field": field, "prompt": QUESTIONS[field]} if field else None
+    response["question"] = {
+        "field": field, "prompt": QUESTIONS[field], "number": list(QUESTIONS).index(field) + 1, "total": len(QUESTIONS),
+    } if field else None
     return response
 
 
@@ -80,7 +82,7 @@ def question(state, text):
             model=model,
             messages=[
                 {"role": "system", "content": "Choose one topic from the provided stroke first-aid guidance for the user's question. Reply with only the topic ID, or none if no topic applies. A question about driving to care selects do_not_drive. Do not give advice yourself."},
-                {"role": "user", "content": json.dumps({"question": text, "topics": sections})},
+                {"role": "user", "content": json.dumps({"question": text, "previous_care_question": state.get("previous_care_question"), "topics": sections})},
             ],
             temperature=0,
             max_tokens=30,
@@ -96,4 +98,5 @@ def question(state, text):
     guidance = sections.get(topic, agent_tools.NO_MATCH["en"])
     actions = [action("lookup_guidance", {"question": text}, {"ok": True, "section": topic, "source": source})]
     state["conversation"].append({"role": "family", "text": text})
+    state["previous_care_question"] = {"text": text, "topic": topic}
     return respond(state, actions, speak(state, guidance, actions))
