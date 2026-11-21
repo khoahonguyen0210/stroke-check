@@ -5,7 +5,7 @@ from pathlib import Path
 from threading import Lock
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
@@ -116,6 +116,20 @@ def agent_message(payload: dict):
     if not text:
         raise HTTPException(422, "Enter a message.")
     return agent_response("reply", text, deepcopy(state), payload.get("language", "en"))
+
+
+@app.get("/api/agent/voice/{session}")
+def agent_voice(session: str):
+    from backend import voice
+
+    entry = AGENT_SESSIONS.get(session)
+    if not entry or not entry[0].get("guided"):
+        raise HTTPException(404, "Voice session not found.")
+    turns = entry[0]["conversation"]
+    audio = voice.speech(turns[-1]["text"]) if turns and turns[-1]["role"] == "agent" else None
+    if not audio:
+        raise HTTPException(503, "ElevenLabs voice is unavailable.")
+    return Response(audio, media_type="audio/mpeg", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/agent/handoff/{session}")

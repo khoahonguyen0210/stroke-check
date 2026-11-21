@@ -77,10 +77,11 @@
       <p id="retake-reason"></p>
       <div id="signs"></div>
       <section id="emergency" hidden>
-        <h2>Trusted contact emails</h2>
-        <p id="alert-status" role="status" tabindex="-1"></p>
-        <button id="cancel-alert" type="button">Cancel email alerts</button>
-        <h3>Emergency assistant</h3>
+        <div class="alert-delivery">
+          <div><h2>Trusted contact emails</h2><p id="alert-status" role="status" tabindex="-1"></p></div>
+          <button id="cancel-alert" type="button">Cancel email alerts</button>
+        </div>
+        <div class="assistant-heading"><h3>Emergency assistant</h3><span>Powered by Nemotron</span></div>
         <p id="last-normal">Last known normal time is unknown.</p>
         <div class="agent-message">
           <p id="agent-say" role="status"></p>
@@ -89,14 +90,18 @@
         <form id="agent-answer" hidden>
           <label for="family-message" id="agent-question"></label>
           <input id="family-message" required maxlength="1500" placeholder="Type your answer">
-          <button>Save answer</button>
+          <button class="voice-input" id="dictate-answer" type="button" aria-pressed="false" hidden>Speak answer</button>
+          <button class="primary">Save answer</button>
           <button id="skip-question" type="button">I don’t know / skip</button>
         </form>
         <form id="agent-care" hidden>
           <label for="care-message">Ask about care while help is on the way</label>
           <input id="care-message" required maxlength="1500" placeholder="What should I do while waiting?">
-          <button>Ask assistant</button>
+          <button class="voice-input" id="dictate-question" type="button" aria-pressed="false" hidden>Speak question</button>
+          <button class="primary">Ask assistant</button>
         </form>
+        <p id="dictation-status" role="status" hidden></p>
+        <p id="dictation-note" hidden>Voice input uses your browser’s speech service. Review the transcript before sending.</p>
         <h3>Paramedic handoff</h3>
         <dl id="handoff"></dl>
         <a id="print-handoff" target="_blank" rel="noopener" hidden>Printable handoff</a>

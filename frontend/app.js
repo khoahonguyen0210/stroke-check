@@ -287,12 +287,20 @@ let agentState
 let activeQuestion
 let lastNormalTimer
 let alertPending = false
+let voiceGeneration = 0
+let voiceQueue = Promise.resolve()
+let finishVoice
+let currentVoiceSession
+let listening
+const SpeechInput = window.SpeechRecognition || window.webkitSpeechRecognition
 
 function resetEmergency() {
   emergencyRun += 1
   agentState = undefined
   activeQuestion = undefined
-  window.speechSynthesis?.cancel()
+  stopDictation()
+  stopVoice()
+  currentVoiceSession = undefined
   clearInterval(lastNormalTimer)
   $("#emergency").hidden = true
   $("#agent-say").textContent = ""
@@ -302,31 +310,153 @@ function resetEmergency() {
     form.hidden = true
   }
   $("#replay-agent").hidden = true
+  $("#dictation-status").hidden = true
   $("#agent-actions").replaceChildren()
   $("#handoff").replaceChildren()
   $("#print-handoff").hidden = true
 }
 
-function readAloud(text) {
-  if (!window.speechSynthesis || !text) return
-  const voice = new SpeechSynthesisUtterance(text.replaceAll("911", "nine one one"))
-  voice.lang = "en-US"
-  window.speechSynthesis.speak(voice)
+function stopVoice() {
+  voiceGeneration += 1
+  finishVoice?.()
+  window.speechSynthesis?.cancel()
+  voiceQueue = Promise.resolve()
 }
 
-function showAgentMessage(text, displayedAsQuestion = false) {
+function playBrowserVoice(text) {
+  if (!window.speechSynthesis) return Promise.resolve()
+  return new Promise((resolve) => {
+    const utterance = new SpeechSynthesisUtterance(text.replaceAll("911", "nine one one"))
+    const end = () => {
+      clearTimeout(timeout)
+      if (finishVoice === end) finishVoice = undefined
+      resolve()
+    }
+    const timeout = setTimeout(() => {
+      window.speechSynthesis.cancel()
+      end()
+    }, 12000)
+    finishVoice = end
+    utterance.lang = "en-US"
+    utterance.onend = end
+    utterance.onerror = end
+    window.speechSynthesis.speak(utterance)
+  })
+}
+
+function playClip(blob) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(blob)
+    const audio = new Audio(url)
+    const end = (played = true) => {
+      clearTimeout(timeout)
+      audio.pause()
+      URL.revokeObjectURL(url)
+      if (finishVoice === end) finishVoice = undefined
+      resolve(played)
+    }
+    const timeout = setTimeout(() => end(false), 20000)
+    finishVoice = end
+    audio.onended = () => end()
+    audio.onerror = () => end(false)
+    audio.play().catch(() => end(false))
+  })
+}
+
+function readAloud(text, session) {
+  if (!text) return
+  const generation = voiceGeneration
+  const clip = session
+    ? fetch(`/api/agent/voice/${encodeURIComponent(session)}`, { signal: AbortSignal.timeout?.(5000) })
+      .then((response) => response.ok ? response.blob() : null).catch(() => null)
+    : Promise.resolve(null)
+  voiceQueue = voiceQueue.then(async () => {
+    const audio = await clip
+    if (generation !== voiceGeneration) return
+    if (audio && await playClip(audio)) return
+    if (generation === voiceGeneration) await playBrowserVoice(text)
+  }).catch(() => {})
+}
+
+function showAgentMessage(text, displayedAsQuestion = false, session) {
   const message = $("#agent-say")
   const replay = $("#replay-agent")
+  currentVoiceSession = session
   message.textContent = text
   message.hidden = displayedAsQuestion
-  replay.hidden = !window.speechSynthesis || !text
+  replay.hidden = !text || (!session && !window.speechSynthesis)
   message.parentElement.hidden = message.hidden && replay.hidden
-  readAloud(text)
+  readAloud(text, session)
 }
 
 $("#replay-agent").onclick = () => {
-  window.speechSynthesis?.cancel()
-  readAloud($("#agent-say").textContent)
+  stopDictation()
+  stopVoice()
+  readAloud($("#agent-say").textContent, currentVoiceSession)
+}
+
+function stopDictation() {
+  if (!listening) return
+  const { recognition, reset } = listening
+  reset()
+  recognition.abort()
+}
+
+function dictate(button, input) {
+  if (!SpeechInput) return
+  if (listening?.button === button) {
+    listening.recognition.stop()
+    return
+  }
+  stopDictation()
+  stopVoice()
+  const recognition = new SpeechInput()
+  const feedback = $("#dictation-status")
+  const label = button.textContent
+  function reset() {
+    clearTimeout(timeout)
+    if (listening?.recognition !== recognition) return
+    button.textContent = label
+    button.setAttribute("aria-pressed", "false")
+    listening = undefined
+  }
+  const timeout = setTimeout(() => recognition.stop(), 15000)
+  listening = { recognition, button, reset }
+  recognition.lang = "en-US"
+  recognition.continuous = false
+  recognition.interimResults = false
+  recognition.onresult = (event) => {
+    if (listening?.recognition !== recognition) return
+    input.value = event.results[0][0].transcript.trim().slice(0, input.maxLength)
+    feedback.textContent = "Review what the browser heard, then send it."
+    input.focus()
+  }
+  recognition.onerror = () => {
+    if (listening?.recognition === recognition) feedback.textContent = "Voice input was unavailable. You can type instead."
+    reset()
+  }
+  recognition.onend = () => {
+    if (listening?.recognition === recognition && !input.value.trim()) feedback.textContent = "Nothing was transcribed. Try again or type your message."
+    reset()
+  }
+  try {
+    recognition.start()
+    button.textContent = "Stop listening"
+    button.setAttribute("aria-pressed", "true")
+    feedback.hidden = false
+    feedback.textContent = "Listening…"
+  } catch {
+    feedback.hidden = false
+    recognition.onerror()
+  }
+}
+
+if (SpeechInput) {
+  $("#dictate-answer").hidden = false
+  $("#dictate-question").hidden = false
+  $("#dictation-note").hidden = false
+  $("#dictate-answer").onclick = (event) => dictate(event.currentTarget, $("#family-message"))
+  $("#dictate-question").onclick = (event) => dictate(event.currentTarget, $("#care-message"))
 }
 
 function updateAgent(response, run) {
@@ -336,7 +466,7 @@ function updateAgent(response, run) {
   $("#agent-answer").hidden = !activeQuestion
   $("#agent-question").textContent = activeQuestion?.prompt ?? ""
   $("#agent-care").hidden = !agentState?.session
-  showAgentMessage(response.say ?? "", response.say === activeQuestion?.prompt)
+  showAgentMessage(response.say ?? "", response.say === activeQuestion?.prompt, agentState?.session)
   const handoff = response.handoff ?? {}
   const facts = handoff.facts ?? {}
   const known = facts.last_known_normal ?? agentState?.timer?.last_known_normal
@@ -391,6 +521,9 @@ async function startEmergency(result) {
 
 async function sendAgentMessage(kind, input) {
   if (!agentState) return
+  stopDictation()
+  stopVoice()
+  $("#dictation-status").hidden = true
   const run = emergencyRun
   const text = kind === "skip" ? "" : input.value.trim()
   if (!text && kind !== "skip") return
