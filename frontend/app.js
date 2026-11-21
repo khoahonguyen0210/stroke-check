@@ -143,12 +143,30 @@ async function postRecording(stream, tasks, collecting) {
 }
 
 function renderResult(result) {
-  status.textContent = result.retake_reason ?? result.overall
+  $("#result").hidden = false
+  $("#outcome").textContent = {
+    warning: "Possible stroke signs. Call 911 now.",
+    clear: "No warning signs detected by this check",
+    retake: "Recording needs a retake",
+  }[result.overall]
+  $("#retake-reason").textContent = result.retake_reason ?? ""
+  $("#retake").hidden = result.overall !== "retake"
+  $("#signs").replaceChildren(...Object.entries(result.signs).map(([name, sign]) => {
+    const card = document.createElement("article")
+    card.className = sign.flag ? "flagged" : "sign"
+    const title = document.createElement("h3")
+    title.textContent = { face: "Face droop", arms: "Arm drift", speech: "Slurred speech" }[name]
+    const detail = document.createElement("p")
+    detail.textContent = sign.p == null ? "Unavailable" : `${sign.flag ? "Flagged" : "Below threshold"} · ${Math.round(sign.p * 100)}%`
+    card.append(title, detail)
+    return card
+  }))
 }
 
 $("#collect").onchange = (event) => { $("#labels").hidden = !event.target.checked }
 $("#setup").onsubmit = async (event) => {
   event.preventDefault()
+  $("#result").hidden = true
   let stream
   const collecting = $("#collect").checked
   const inputs = [...$("#setup").elements]
@@ -173,3 +191,5 @@ $("#setup").onsubmit = async (event) => {
     inputs.forEach((input) => { input.disabled = false })
   }
 }
+
+$("#retake").onclick = () => $("#setup").requestSubmit()

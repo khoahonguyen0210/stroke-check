@@ -3,8 +3,9 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 
-from backend import fusion, storage
+from backend import fusion, recording, storage
 
 ROOT = Path(__file__).resolve().parents[1]
 app = FastAPI()
@@ -17,7 +18,17 @@ def health():
 
 @app.post("/api/check")
 async def check(meta: str = Form(), face: str = Form(), arms: str = Form(), audio: UploadFile = File()):
-    return fusion.predict({}, {})
+    try:
+        face_data, arms_data = json.loads(face), json.loads(arms)
+        if not isinstance(face_data, dict) or not isinstance(arms_data, dict):
+            raise ValueError("Expected landmark objects.")
+        content = await audio.read()
+        features, quality, latency = await run_in_threadpool(recording.analyze, face_data, arms_data, content)
+    except (ValueError, TypeError, KeyError, IndexError) as error:
+        raise HTTPException(422, "Invalid recording.") from error
+    result = await run_in_threadpool(fusion.predict, features, quality)
+    result["latency_ms"] = latency
+    return result
 
 
 @app.post("/api/collect")
