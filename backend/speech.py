@@ -89,6 +89,13 @@ def whisper():
     return WhisperModel("base", device="cpu", compute_type="int8")
 
 
+def warm():
+    wav2vec()
+    classifier()
+    whisper()
+    return True
+
+
 def embedding(wav, layer, max_seconds):
     import torch
 
