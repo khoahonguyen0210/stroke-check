@@ -83,6 +83,7 @@ function speech(stream) {
     const cleanup = () => {
       clearInterval(timer)
       done.hidden = true
+      $("#speech-tip").hidden = true
       done.onclick = null
     }
     recorder.ondataavailable = ({ data }) => chunks.push(data)
@@ -90,6 +91,7 @@ function speech(stream) {
     recorder.onstop = () => { cleanup(); resolve(new Blob(chunks, { type: recorder.mimeType })) }
     recorder.start()
     done.hidden = false
+    $("#speech-tip").hidden = false
     done.onclick = stop
     const started = performance.now()
     $("#prompt").textContent = sentence + " (8 s)"
@@ -206,7 +208,10 @@ $("#setup").onsubmit = async (event) => {
   try {
     visionTasks ??= createTasks().catch((error) => { visionTasks = null; throw error })
     const tasks = await visionTasks
-    stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: true,
+      audio: { noiseSuppression: true, echoCancellation: true, channelCount: 1 },
+    })
     video.srcObject = stream
     await video.play()
     $("#preview").hidden = false
