@@ -131,13 +131,15 @@ async function postRecording(stream, tasks, collecting) {
     name: $("#name").value.trim(), user_agent: navigator.userAgent,
     glasses: $("#glasses").checked, lighting: $("#lighting").value,
   }))
-  data.set("face", JSON.stringify({ fps: face.length / 9, frames: face }))
-  data.set("arms", JSON.stringify({ fps: arms.length / 10, frames: arms }))
+  data.set("face", new Blob([JSON.stringify({ fps: face.length / 9, frames: face })], { type: "application/json" }), "face.json")
+  data.set("arms", new Blob([JSON.stringify({ fps: arms.length / 10, frames: arms })], { type: "application/json" }), "arms.json")
   data.set("audio", audio, "speech.webm")
   if (collecting) data.set("label", $("#label").value)
   const response = await fetch(collecting ? "/api/collect" : "/api/check", { method: "POST", body: data })
-  if (!response.ok) throw new Error("The recording could not be submitted.")
-  const result = await response.json()
+  const result = await response.json().catch(() => null)
+  if (!response.ok || !result) {
+    throw new Error(typeof result?.detail === "string" ? result.detail : `The recording could not be submitted (HTTP ${response.status}).`)
+  }
   if (collecting) status.textContent = `Saved to ${result.path}`
   else renderResult(result)
 }

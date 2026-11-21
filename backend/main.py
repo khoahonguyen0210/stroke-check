@@ -21,10 +21,14 @@ def health():
     return {"ok": True}
 
 
+async def read_landmarks(part: UploadFile | str):
+    return json.loads(part if isinstance(part, str) else await part.read())
+
+
 @app.post("/api/check")
-async def check(meta: str = Form(), face: str = Form(), arms: str = Form(), audio: UploadFile = File()):
+async def check(meta: str = Form(), face: UploadFile | str = File(), arms: UploadFile | str = File(), audio: UploadFile = File()):
     try:
-        face_data, arms_data = json.loads(face), json.loads(arms)
+        face_data, arms_data = await read_landmarks(face), await read_landmarks(arms)
         if not isinstance(face_data, dict) or not isinstance(arms_data, dict):
             raise ValueError("Expected landmark objects.")
         content = await audio.read()
@@ -37,16 +41,16 @@ async def check(meta: str = Form(), face: str = Form(), arms: str = Form(), audi
 
 
 @app.post("/api/collect")
-async def collect(meta: str = Form(), face: str = Form(), arms: str = Form(), audio: UploadFile = File(), label: str = Form()):
+async def collect(meta: str = Form(), face: UploadFile | str = File(), arms: UploadFile | str = File(), audio: UploadFile = File(), label: str = Form()):
     try:
-        path = storage.save_session(json.loads(meta), json.loads(face), json.loads(arms), await audio.read(), label)
+        path = storage.save_session(json.loads(meta), await read_landmarks(face), await read_landmarks(arms), await audio.read(), label)
     except (KeyError, TypeError, ValueError) as error:
         raise HTTPException(422, "Invalid session data.") from error
     return {"path": (Path("data") / path.relative_to(storage.DATA)).as_posix()}
 
 
 @app.post("/api/baseline/{user}")
-async def baseline(user: str, meta: str = Form(), face: str = Form(), arms: str = Form(), audio: UploadFile = File()):
+async def baseline(user: str, meta: str = Form(), face: UploadFile | str = File(), arms: UploadFile | str = File(), audio: UploadFile = File()):
     return {"saved": False}
 
 
